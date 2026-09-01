@@ -536,68 +536,130 @@
     }
     return null;
   }
-  async function resolveAccentColor(sourceUrl, fallbackUrl) {
-    const direct = await getDominantColor(sourceUrl);
-    if (direct) return direct;
-    if (fallbackUrl && fallbackUrl !== sourceUrl) {
-      const cover = await getDominantColor(fallbackUrl);
-      if (cover) return cover;
-    }
-    const palette = await getPaletteColor(Spicetify.Player?.data?.item?.uri ?? null);
-    if (palette) return palette;
-    return FALLBACK_COLOR;
+  /* Catppuccin palette (all 4 flavors) – every accent snaps to the nearest
+     official swatch instead of an arbitrary in-between color. */
+  var CATPPUCIN_ACCENTS = [
+    // Mocha
+    "F5E0DC", "F2CDCD", "F5C2E7", "CBA6F7", "F38BA8", "EBA0AC",
+    "FAB387", "F9E2AF", "A6E3A1", "94E2D5", "89DCEB", "74C7EC", "89B4FA", "B4BEFE",
+    // Macchiato
+    "F4DBD6", "F0C6C6", "F5BDE6", "C6A0F6", "ED8796", "EE99A0",
+    "F5A97F", "EED49F", "A6DA95", "8BD5CA", "91D7E3", "7DC4E4", "8AADF4", "B7BDF8",
+    // Frappé
+    "F2D5CF", "EEBEBE", "F4B8E4", "CA9EE6", "E78284", "EA999C",
+    "EF9F76", "E5C890", "A6D189", "81C8BE", "99D1DB", "85C1DC", "8CAAEE", "BABBF1",
+    // Latte
+    "DC8A78", "DD7878", "EA76CB", "8839EF", "D20F39", "E64553",
+    "FE640B", "DF8E1D", "40A02B", "179299", "04A5E5", "209FB5", "1E66F5", "7287FD"
+  ];
+  var CATPPUCIN_NEUTRALS = [
+    // Text / subtext / surface tones (for pairing with an accent)
+    "CDD6F4", "A6ADC8", "9399B2", "585B70", "313244", "1E1E2E", "181825", "11111B",
+    "CAD3F5", "A5ADCB", "939AB7", "5B6078", "363A4F", "24273A", "1E2030", "181926",
+    "C6D0F5", "A5ADCE", "949CBB", "626880", "414559", "303446", "292C3C", "232634",
+    "4C4F69", "6C6F85", "7C7F93", "ACB0BE", "CCD0DA", "EFF1F5", "E6E9EF", "DCE0E8"
+  ];
+  function parseRgb(rgb) {
+    const m2 = /rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(rgb);
+    if (!m2) return null;
+    return { r: +m2[1], g2: +m2[2], b2: +m2[3] };
   }
-  function enhanceColor(rgb, saturationBoost = 2, lightnessBoost = 1.3) {
-    const parts = rgb.match(/\d+/g);
-    if (!parts || parts.length < 3) return rgb;
-    const [r, g2, b2] = parts.map(Number);
-    const r1 = r / 255;
-    const g1 = g2 / 255;
-    const b1 = b2 / 255;
-    const max = Math.max(r1, g1, b1);
-    const min = Math.min(r1, g1, b1);
-    let h2 = 0;
-    let s2 = 0;
-    let l = (max + min) / 2;
-    if (max !== min) {
-      const d2 = max - min;
-      s2 = l > 0.5 ? d2 / (2 - max - min) : d2 / (max + min);
-      switch (max) {
-        case r1:
-          h2 = (g1 - b1) / d2 + (g1 < b1 ? 6 : 0);
-          break;
-        case g1:
-          h2 = (b1 - r1) / d2 + 2;
-          break;
-        case b1:
-          h2 = (r1 - g1) / d2 + 4;
-          break;
-      }
-      h2 /= 6;
-    }
-    s2 = Math.min(s2 * saturationBoost, 1);
-    l = Math.min(l * lightnessBoost, 1);
-    const hue2rgb = (p2, q2, t) => {
-      if (t < 0) t += 1;
-      if (t > 1) t -= 1;
-      if (t < 1 / 6) return p2 + (q2 - p2) * 6 * t;
-      if (t < 1 / 2) return q2;
-      if (t < 2 / 3) return p2 + (q2 - p2) * (2 / 3 - t) * 6;
-      return p2;
+  function luminanceOf({ r, g2, b2 }) {
+    const f = (v) => {
+      const c = v / 255;
+      return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
     };
-    let r2;
-    let g22;
-    let b22;
-    if (s2 === 0) {
-      r2 = g22 = b22 = l;
-    } else {
-      const q2 = l < 0.5 ? l * (1 + s2) : l + s2 - l * s2;
-      const p2 = 2 * l - q2;
-      r2 = hue2rgb(p2, q2, h2 + 1 / 3);
-      g22 = hue2rgb(p2, q2, h2);
-      b22 = hue2rgb(p2, q2, h2 - 1 / 3);
+    return 0.2126 * f(r) + 0.7152 * f(g2) + 0.0722 * f(b2);
+  }
+  function contrastRatio(a, b2) {
+    const la = luminanceOf(a);
+    const lb = luminanceOf(b2);
+    const [hi, lo] = la > lb ? [la, lb] : [lb, la];
+    return (hi + 0.05) / (lo + 0.05);
+  }
+  function hexToRgb(hex) {
+    return { r: parseInt(hex.slice(0, 2), 16), g2: parseInt(hex.slice(2, 4), 16), b2: parseInt(hex.slice(4, 6), 16) };
+  }
+  /* Find the palette swatch with the smallest perceptual distance to the
+     sampled color. Both accent and neutral pools are searched. */
+  function nearestPaletteColor(rgbStr, pool) {
+    const rgb = parseRgb(rgbStr);
+    if (!rgb) return null;
+    let best = null;
+    let bestDist = Infinity;
+    for (const hex of pool) {
+      const c2 = hexToRgb(hex);
+      const dr = rgb.r - c2.r;
+      const dg = rgb.g2 - c2.g2;
+      const db = rgb.b2 - c2.b2;
+      const dist = 2 * dr * dr + 4 * dg * dg + 3 * db * db;
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = hex;
+      }
     }
-    return `rgb(${Math.round(r2 * 255)},${Math.round(g22 * 255)},${Math.round(b22 * 255)})`;
+    return best ? `#${best}` : null;
+  }
+  function rgbFromCss(css) {
+    const m2 = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(css);
+    if (!m2) return null;
+    return { r: +m2[1], g2: +m2[2], b2: +m2[3] };
+  }
+  /* Pick a secondary color: prefer a neutral swatch with enough contrast
+     against the primary (>= 2.5:1), falling back to a far-enough accent. */
+  function pickSecondaryColor(primaryHex) {
+    const primary = hexToRgb(primaryHex);
+    const lp = luminanceOf(primary);
+    const onAccent = lp > 0.42 ? hexToRgb("11111B") : hexToRgb("EFF1F5");
+    let best = null;
+    let bestContrast = 0;
+    for (const hex of CATPPUCIN_NEUTRALS) {
+      const c2 = hexToRgb(hex);
+      const ratio = contrastRatio(primary, c2);
+      if (ratio > bestContrast) {
+        bestContrast = ratio;
+        best = c2;
+      }
+    }
+    if (best && bestContrast >= 2.5) {
+      return { hex: `#${best.r.toString(16).padStart(2, "0")}${best.g2.toString(16).padStart(2, "0")}${best.b2.toString(16).padStart(2, "0")}`.toUpperCase(), onAccent };
+    }
+    let bestAccent = null;
+    let bestAccentContrast = 0;
+    for (const hex of CATPPUCIN_ACCENTS) {
+      const c2 = hexToRgb(hex);
+      const ratio = contrastRatio(primary, c2);
+      if (ratio > bestAccentContrast) {
+        bestAccentContrast = ratio;
+        bestAccent = c2;
+      }
+    }
+    const fallback = bestAccent || (lp > 0.42 ? hexToRgb("11111B") : hexToRgb("EFF1F5"));
+    const hexStr = `#${fallback.r.toString(16).padStart(2, "0")}${fallback.g2.toString(16).padStart(2, "0")}${fallback.b2.toString(16).padStart(2, "0")}`.toUpperCase();
+    return { hex: hexStr, onAccent };
+  }
+  /* Resolve the accent pair for a cover. The dominant color is snapped to the
+     nearest Catppuccin swatch; a secondary color is picked with a guaranteed
+     contrast ratio against it. */
+  async function resolveAccentPair(sourceUrl, fallbackUrl) {
+    let sampled = null;
+    const direct = await getDominantColor(sourceUrl);
+    if (direct) sampled = direct;
+    if (!sampled && fallbackUrl && fallbackUrl !== sourceUrl) {
+      const cover = await getDominantColor(fallbackUrl);
+      if (cover) sampled = cover;
+    }
+    if (!sampled) {
+      const palette = await getPaletteColor(Spicetify.Player?.data?.item?.uri ?? null);
+      if (palette) sampled = palette;
+    }
+    const primary = nearestPaletteColor(sampled || FALLBACK_COLOR, CATPPUCIN_ACCENTS) || FALLBACK_COLOR;
+    const secondary = pickSecondaryColor(primary.replace("#", ""));
+    return { primary, secondary: secondary.hex, onAccent: secondary.onAccent };
+  }
+  function cssRgb(hex) {
+    const c2 = hexToRgb(hex.replace("#", ""));
+    return `rgb(${c2.r},${c2.g2},${c2.b2})`;
   }
   function readAccentBoosts() {
     return {
@@ -606,9 +668,10 @@
     };
   }
   async function applyAccent(sourceUrl, fallbackUrl) {
-    const { satBoost, lightBoost } = readAccentBoosts();
-    const color = sourceUrl === UNSAMPLEABLE ? FALLBACK_COLOR : await resolveAccentColor(sourceUrl, fallbackUrl);
-    document.documentElement.style.setProperty("--accent-color", enhanceColor(color, satBoost, lightBoost));
+    const pair = sourceUrl === UNSAMPLEABLE ? { primary: FALLBACK_COLOR, secondary: "#B4BEFE", onAccent: hexToRgb("11111B") } : await resolveAccentPair(sourceUrl, fallbackUrl);
+    document.documentElement.style.setProperty("--accent-color", pair.primary);
+    document.documentElement.style.setProperty("--accent-color-secondary", cssRgb(pair.secondary));
+    document.documentElement.style.setProperty("--accent-on-accent", cssRgb(pair.onAccent));
     window.dispatchEvent(new Event("liquifyAccentColorReady"));
   }
   var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -2816,6 +2879,7 @@
         try {
           saveOriginalIfNeeded(el);
           const img = getImgElem(el);
+          el.classList.toggle("liquify-artist-banner-hidden", mode === "none");
           el.style.opacity = "0";
           if (mode === "theme") {
             restoreOriginal(el);
@@ -2839,6 +2903,11 @@
               html.style.backgroundSize = "cover";
               html.style.backgroundPosition = "center center";
             }
+            el.style.opacity = "1";
+          } else if (mode === "none") {
+            el.style.opacity = "0";
+          } else {
+            restoreOriginal(el);
             el.style.opacity = "1";
           }
         } catch (err) {
@@ -7030,7 +7099,59 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
   var LIQUIFY_GITHUB_URL = "https://github.com/NMWplays/Liquify";
 
   // src/settings/features/config.ts
+  var COLOR_SCHEME_KEY = "liquify-color-scheme";
+  var COLOR_SCHEMES = [
+    { value: "mocha", label: "Mocha" },
+    { value: "macchiato", label: "Macchiato" },
+    { value: "frappe", label: "Frappe" },
+    { value: "latte", label: "Latte" }
+  ];
+  var COLOR_PALETTES = {
+    mocha: { text: "CDD6F4", subtext: "A6ADC8", main: "1E1E2E", sidebar: "181825", player: "181825", card: "313244", shadow: "11111B", highlight: "45475A", "highlight-elevated": "45475A", "main-elevated": "313244", "selected-row": "585B70", button: "CBA6F7", "button-active": "A6E3A1", "button-disabled": "45475A", "tab-active": "313244", notification: "CBA6F7", "notification-error": "F38BA8", misc: "9399B2" },
+    macchiato: { text: "CAD3F5", subtext: "A5ADCB", main: "24273A", sidebar: "1E2030", player: "1E2030", card: "363A4F", shadow: "181926", highlight: "494D64", "highlight-elevated": "494D64", "main-elevated": "363A4F", "selected-row": "5B6078", button: "C6A0F6", "button-active": "A6DA95", "button-disabled": "494D64", "tab-active": "363A4F", notification: "C6A0F6", "notification-error": "ED8796", misc: "939AB7" },
+    frappe: { text: "C6D0F5", subtext: "A5ADCE", main: "303446", sidebar: "292C3C", player: "292C3C", card: "414559", shadow: "232634", highlight: "51576D", "highlight-elevated": "51576D", "main-elevated": "414559", "selected-row": "626880", button: "CA9EE6", "button-active": "A6D189", "button-disabled": "51576D", "tab-active": "414559", notification: "CA9EE6", "notification-error": "E78284", misc: "949CBB" },
+    latte: { text: "4C4F69", subtext: "6C6F85", main: "EFF1F5", sidebar: "E6E9EF", player: "E6E9EF", card: "CCD0DA", shadow: "DCE0E8", highlight: "BCC0CC", "highlight-elevated": "BCC0CC", "main-elevated": "CCD0DA", "selected-row": "ACB0BE", button: "8839EF", "button-active": "40A02B", "button-disabled": "BCC0CC", "tab-active": "CCD0DA", notification: "8839EF", "notification-error": "D20F39", misc: "7C7F93" }
+  };
+  function applyColorScheme(scheme) {
+    if (!COLOR_PALETTES[scheme]) scheme = "mocha";
+    localStorage.setItem(COLOR_SCHEME_KEY, scheme);
+    const root = document.documentElement;
+    root.dataset.liquifyFlavor = scheme;
+    for (const [key, value] of Object.entries(COLOR_PALETTES[scheme])) root.style.setProperty(`--spice-${key}`, `#${value}`);
+    window.dispatchEvent(new Event("liquifyColorSchemeChange"));
+  }
+  function ensureColorSchemeApplied() {
+    const saved = localStorage.getItem(COLOR_SCHEME_KEY);
+    if (saved && COLOR_SCHEMES.some((s2) => s2.value === saved)) {
+      try {
+        document.documentElement.dataset.liquifyFlavor = saved;
+      } catch {
+      }
+      return saved;
+    }
+    /* No explicit choice yet — detect the active scheme from the injected
+       --spice-main background so the menu defaults to what's really applied. */
+    try {
+      const bg = getComputedStyle(document.documentElement).getPropertyValue("--spice-main").trim().toUpperCase();
+      const known = {
+        mocha: "1E1E2E",
+        macchiato: "24273A",
+        frappe: "303446",
+        latte: "EFF1F5"
+      };
+      for (const [name, hex] of Object.entries(known)) {
+        if (bg.includes(hex)) {
+          localStorage.setItem(COLOR_SCHEME_KEY, name);
+          document.documentElement.dataset.liquifyFlavor = name;
+          return name;
+        }
+      }
+    } catch {
+    }
+    return "mocha";
+  }
   var PLAIN_KEYS = [
+    "liquify-color-scheme",
     "liquify-accent-mode",
     "liquify-accent-source",
     "liquify-custom-color",
@@ -7055,8 +7176,7 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
     "liquify-action-bar-box-mode",
     "liquify-transparent-player",
     "liquify-compact-player",
-    "liquify-lyrics-mode",
-    "liquify-glass-enabled"
+    "liquify-lyrics-mode"
   ];
   var CONFIG_KEYS = [
     ...PLAIN_KEYS,
@@ -7324,6 +7444,7 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
       document.body
     )) : null;
     const [accentMode, setAccentMode] = React.useState(readLS("liquify-accent-mode", "dynamic"));
+    const [scheme, setScheme] = React.useState(localStorage.getItem(COLOR_SCHEME_KEY) || "mocha");
     const [accentSource, setAccentSource] = React.useState(readLS("liquify-accent-source", "background"));
     const [accentColor, setAccentColor] = React.useState(readLS("liquify-custom-color", "#1DB954"));
     const [accentSatBoost, setAccentSatBoost] = React.useState(readNum("liquify-accent-sat-boost", 17));
@@ -7378,9 +7499,9 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
     const [npvcBlur, setNpvcBlur] = React.useState(readNum(NPVC_BLUR_KEY, NPVC_DEFAULTS.blur));
     const [popupBounceMode, setPopupBounceMode] = React.useState(readLS(POPUP_BOUNCE_KEY, "on"));
     const [homeLayout, setHomeLayout] = React.useState(readLS(HOME_LAYOUT_KEY, "on"));
-    const [performanceMode, setPerformanceMode] = React.useState(!isGlassEnabled());
-    const [glassBlur, setGlassBlurState] = React.useState(readNum(GLASS_BLUR_KEY, GLASS_BLUR_DEFAULT));
-    const [backdropBlur, setBackdropBlurState] = React.useState(readNum(BACKDROP_BLUR_KEY, BACKDROP_BLUR_DEFAULT));
+    const [performanceMode, setPerformanceMode] = React.useState(false);
+    const [glassBlur, setGlassBlurState] = React.useState(GLASS_BLUR_DEFAULT);
+    const [backdropBlur, setBackdropBlurState] = React.useState(BACKDROP_BLUR_DEFAULT);
     const [navRadius, setNavRadiusState] = React.useState(readNum(NAV_RADIUS_KEY, LAYOUT_RADIUS_DEFAULTS.nav));
     const [mainRadius, setMainRadiusState] = React.useState(readNum(MAIN_RADIUS_KEY, LAYOUT_RADIUS_DEFAULTS.main));
     const [rightRadius, setRightRadiusState] = React.useState(readNum(RIGHT_RADIUS_KEY, LAYOUT_RADIUS_DEFAULTS.right));
@@ -7738,11 +7859,7 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
       { id: "artist", title: titles.artist },
       { id: "ui", title: titles.ui || "UI" },
       { id: "player", title: titles.player },
-      { id: "nextSongCard", title: titles.nextSongCard || "Next Song Card" },
-      { id: "canvasCoverArt", title: titles.canvasCoverArt || "Canvas Cover Art" },
-      { id: "playlist", title: titles.playlist },
       { id: "lyrics", title: titles.lyrics || "Lyrics" },
-      { id: "transparent", title: titles.transparent },
       { id: "config", title: titles.config || "Config" }
     ].map((s2) => /* @__PURE__ */ React.createElement(
       "button",
@@ -7753,7 +7870,17 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
         onClick: () => jumpToSection(s2.id)
       },
       s2.title
-    ))))), sectionNavScrollControls, /* @__PURE__ */ React.createElement("div", { className: "liquifySettingsBody", ref: bodyRef }, /* @__PURE__ */ React.createElement(Section, { id: "liquify-sec-accent", title: titles.accent }, /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.accentColor, /* @__PURE__ */ React.createElement(HelpTip, { text: tips.accentColor })), /* @__PURE__ */ React.createElement("div", { className: "liquifyRowControls" }, /* @__PURE__ */ React.createElement(
+    ))))), sectionNavScrollControls, /* @__PURE__ */ React.createElement("div", { className: "liquifySettingsBody", ref: bodyRef }, /* @__PURE__ */ React.createElement(Section, { id: "liquify-sec-accent", title: titles.accent }, /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, "Color Scheme", /* @__PURE__ */ React.createElement(HelpTip, { text: "Switch between the Catppuccin flavors. Applies after a reload." })), /* @__PURE__ */ React.createElement(
+      Select,
+      {
+        value: scheme,
+        options: COLOR_SCHEMES,
+        onChange: (v2) => {
+          setScheme(v2);
+          applyColorScheme(v2);
+        }
+      }
+    )), /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.accentColor, /* @__PURE__ */ React.createElement(HelpTip, { text: tips.accentColor })), /* @__PURE__ */ React.createElement("div", { className: "liquifyRowControls" }, /* @__PURE__ */ React.createElement(
       Select,
       {
         value: accentMode,
@@ -7899,22 +8026,7 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
           if (val) props.artistCtrl?.setMode?.("url");
         }
       }
-    ))), /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.artistScrollBlur, /* @__PURE__ */ React.createElement(HelpTip, { text: tips.artistScrollBlur })), /* @__PURE__ */ React.createElement(Stepper, { value: artistScrollBlur, min: 0, max: 100, onChange: applyArtistBlur })), /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.artistScrollBrightness, /* @__PURE__ */ React.createElement(HelpTip, { text: tips.artistScrollBrightness })), /* @__PURE__ */ React.createElement(Stepper, { value: artistScrollBrightness, min: 0, max: 200, onChange: applyArtistBrightness }))), /* @__PURE__ */ React.createElement(Section, { id: "liquify-sec-ui", title: titles.ui || "UI" }, /* @__PURE__ */ React.createElement(SubSection, { title: sub.performanceGlass || "Performance & Glass" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.ui?.performanceMode || "Performance Mode:", /* @__PURE__ */ React.createElement(HelpTip, { text: tips.performanceMode })), /* @__PURE__ */ React.createElement(
-      Toggle,
-      {
-        checked: performanceMode,
-        onChange: (checked) => {
-          setPerformanceMode(checked);
-          setGlassEnabled(!checked);
-        }
-      }
-    )), performanceMode ? /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.ui?.backdropBlur || "Backdrop Blur (px):"), /* @__PURE__ */ React.createElement(Stepper, { value: backdropBlur, min: 0, max: 80, onChange: (v2) => {
-      setBackdropBlurState(v2);
-      setBackdropBlur(v2);
-    } })) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.ui?.glassBlur || "Glass Blur (px):", /* @__PURE__ */ React.createElement(HelpTip, { text: tips.glassBlur })), /* @__PURE__ */ React.createElement(Stepper, { value: glassBlur, min: 0, max: 30, onChange: (v2) => {
-      setGlassBlurState(v2);
-      setGlassBlur(v2);
-    } })))), /* @__PURE__ */ React.createElement(SubSection, { title: sub.animations || "Animations" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.ui?.popupBounce || "Popup Bounce:", /* @__PURE__ */ React.createElement(HelpTip, { text: tips.popupBounce })), /* @__PURE__ */ React.createElement(
+    ))), /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.artistScrollBlur, /* @__PURE__ */ React.createElement(HelpTip, { text: tips.artistScrollBlur })), /* @__PURE__ */ React.createElement(Stepper, { value: artistScrollBlur, min: 0, max: 100, onChange: applyArtistBlur })), /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.artistScrollBrightness, /* @__PURE__ */ React.createElement(HelpTip, { text: tips.artistScrollBrightness })), /* @__PURE__ */ React.createElement(Stepper, { value: artistScrollBrightness, min: 0, max: 200, onChange: applyArtistBrightness }))), /* @__PURE__ */ React.createElement(Section, { id: "liquify-sec-ui", title: titles.ui || "UI" }, /* @__PURE__ */ React.createElement(SubSection, { title: sub.animations || "Animations" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.ui?.popupBounce || "Popup Bounce:", /* @__PURE__ */ React.createElement(HelpTip, { text: tips.popupBounce })), /* @__PURE__ */ React.createElement(
       Toggle,
       {
         checked: popupBounceMode === "on",
@@ -8385,7 +8497,85 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
       }
     };
   }
+  function installLyricsViewportFix() {
+    const marker = "liquify-lyrics-viewport";
+    const findViewport = () => {
+      const content = document.querySelector(".lyrics-lyrics-contentContainer");
+      if (!content) return null;
+      let node = content.parentElement;
+      while (node && node !== document.body) {
+        const style = getComputedStyle(node);
+        if ((style.overflowY === "auto" || style.overflowY === "scroll") && node.scrollHeight > node.clientHeight) return node;
+        node = node.parentElement;
+      }
+      return content;
+    };
+    const apply = () => {
+      const viewport = findViewport();
+      if (!viewport) return;
+      viewport.classList.add(marker);
+      const content = viewport.querySelector?.(".lyrics-lyrics-contentContainer") || document.querySelector(".lyrics-lyrics-contentContainer");
+      content?.classList.add("liquify-lyrics-content");
+    };
+    const observer = new MutationObserver(() => requestAnimationFrame(apply));
+    observer.observe(document.body, { childList: true, subtree: true });
+    apply();
+  }
+  function installLyricsSyncButtonFix() {
+    const apply = () => {
+      document.querySelectorAll(".lyrics-lyrics-contentContainer button, .lyrics-lyrics-background button").forEach((button) => {
+        const label = `${button.getAttribute("aria-label") || ""} ${button.textContent || ""}`.toLowerCase();
+        if (label.includes("sync") || label.includes("synchron")) button.classList.add("liquify-lyrics-sync-button");
+      });
+    };
+    const observer = new MutationObserver(() => requestAnimationFrame(apply));
+    observer.observe(document.body, { childList: true, subtree: true });
+    apply();
+  }
+  function installNowPlayingHeaderScrollState() {
+    let bound = null;
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const header = document.querySelector(".main-nowPlayingView-headerWrapper");
+      if (!header || !bound) return;
+      header.classList.toggle("liquify-npv-header-at-top", bound.scrollTop <= 0);
+      header.classList.toggle("liquify-npv-header-scrolled", bound.scrollTop > 0);
+    };
+    const bind = () => {
+      const header = document.querySelector(".main-nowPlayingView-headerWrapper");
+      if (!header) return;
+      let node = header.parentElement;
+      while (node && node !== document.body && node.scrollHeight <= node.clientHeight) node = node.parentElement;
+      if (!node || node === bound) return update();
+      if (bound) bound.removeEventListener("scroll", onScroll);
+      bound = node;
+      bound.addEventListener("scroll", onScroll, { passive: true });
+      update();
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+    const observer = new MutationObserver(() => requestAnimationFrame(bind));
+    observer.observe(document.body, { childList: true, subtree: true });
+    bind();
+  }
+  function installArtistSelectionState() {
+    const apply = () => {
+      document.querySelectorAll(".main-trackList-trackListRow").forEach((row) => {
+        const selected = row.getAttribute("aria-selected") === "true" || row.getAttribute("data-selected") === "true" || row.classList.contains("selected") || row.classList.contains("is-selected");
+        if (row.classList.contains("liquify-artist-row-selected") !== selected) row.classList.toggle("liquify-artist-row-selected", selected);
+      });
+    };
+    const observer = new MutationObserver(apply);
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["aria-selected", "data-selected", "class"] });
+    apply();
+  }
   function installFeatureControllers() {
+    installLyricsViewportFix();
+    installLyricsSyncButtonFix();
+    installNowPlayingHeaderScrollState();
+    installArtistSelectionState();
     installLyricsTranslator();
     installPlaylistIndicatorVisualizer();
     installHomeScreenVisualizer();
@@ -8395,11 +8585,19 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
     installPlayerControlIcons();
     installShareButtonTransition();
   }
+  function migrateLegacyGlassSettings() {
+    const key = "liquify-config-migration-version";
+    if (localStorage.getItem(key) === "2") return;
+    ["liquify-glass-enabled", "liquify-glass-blur", "liquify-backdrop-blur"].forEach((legacyKey) => localStorage.removeItem(legacyKey));
+    localStorage.setItem(key, "2");
+  }
   async function startLiquifySettings() {
     const anyWin = window;
     if (anyWin.liquifyStandaloneTsInitialized) return;
     anyWin.liquifyStandaloneTsInitialized = true;
+    migrateLegacyGlassSettings();
     await awaitSpicetifyReact();
+    ensureColorSchemeApplied();
     applySavedGlowSettings();
     applySavedAccentSettings();
     applySavedLayoutSettings();
