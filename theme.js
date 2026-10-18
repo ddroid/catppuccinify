@@ -3945,8 +3945,8 @@
   var PLAYER_WIDTH_MODE_KEY = "liquify-player-width";
   var PLAYER_CUSTOM_W_KEY = "liquify-player-custom-width";
   var PLAYER_CUSTOM_H_KEY = "liquify-player-custom-height";
-  var DEFAULT_CUSTOM_WIDTH = 80;
-  var DEFAULT_CUSTOM_HEIGHT = 88;
+  var DEFAULT_CUSTOM_WIDTH = 70;
+  var DEFAULT_CUSTOM_HEIGHT = 80;
   function getPlayerElement() {
     return document.querySelector(".Root__now-playing-bar");
   }
