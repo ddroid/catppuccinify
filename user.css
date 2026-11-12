@@ -1,20 +1,17 @@
 ﻿/*
   Liquify V2 – Liquid Glass theme for Spicetify
-  Static styles only. The GlassSurface effect (SVG displacement filter) is
-  injected at runtime by theme.js, which adds the .liquify-glass classes and
-  sets the --liquify-* custom properties consumed below.
+  Static styles only. The glass itself (backdrop-filter + the shared SVG
+  displacement filters) is generated at runtime by theme.js from the single
+  GLASS_TARGETS list in src/theme.ts.
 */
 
-/* ════════ GlassSurface (port of reactbits.dev/components/glass-surface) ════════ */
+/* ════════ Glass (port of reactbits.dev/components/glass-surface) ════════ */
 
-/* Blur strengths. Defaults now come from the settings feature
-   (src/settings/features/glassBlur.ts), which sets --liquify-glass-blur (SVG
-   glass mode) and --liquify-backdrop-blur (plain mode). Special elements carry
-   their own glassBlur from theme.ts (applied per-element in glassSurface.ts).
-   The per-element rules below keep var(..., 2px) / var(..., 2rem) fallbacks for
-   before that runs. */
+/* Blur strengths come from the settings (src/settings/features/glassBlur.ts):
+   --liquify-glass-blur in glass mode, --liquify-backdrop-blur in performance
+   mode. Targets with their own blur in theme.ts keep that fixed value. */
 
-/* Hidden SVG hosting the per-element displacement filters (created by theme.js) */
+/* Hidden SVG hosting the shared displacement filters (created by theme.js) */
 #liquify-filter-host {
   position: fixed;
   top: 0;
@@ -24,41 +21,23 @@
   pointer-events: none;
 }
 
-/* Chromium path: backdrop refraction via SVG displacement filter.
-   No box-shadow here on purpose — set your own per element in this file. */
-.liquify-glass--svg {
+/* These targets used to get a per-element glass surface, which also cleared
+   their own background. The glass is plain CSS now, so that happens here. */
+.main-topBar-background,
+.main-trackList-trackListHeader,
+.main-nowPlayingView-trackInfo,
+.view-homeShortcutsGrid-shortcut,
+.x-settings-section,
+.JDUQ8zTo6EUgHoYt,
+.main-entityHeader-imageContainerWrapper,
+.main-entityHeader-container.gmKBgPCnX785KDicbdJu,
+.main-entityHeader-container.main-entityHeader-containerNormal,
+.Root__globalNav .DoxYADBBjYMvoYwl7QPg,
+.yfJeY2Xi99dPOe6fsIha,
+.znOINyqAy7ivIGbQyrbt,
+.iGRaSZDa1r0m21aF6oZq,
+.niJOWstqVyfckHcXQxP1 .cSZJwcwYgJfwduUmXOOV {
   background: transparent;
-  backdrop-filter: var(--liquify-filter) blur(var(--liquify-glass-blur, 2px));
-}
-
-/* "Before" mode (theme.ts { applyTo: 'before' }): the glass is painted on a
-   ::before layer behind the element's content instead of on the element
-   itself, so the content (e.g. context-menu items) stays crisp above the
-   refraction. The element still carries --liquify-filter + the --svg/--simple
-   marker, but must not filter itself — the two-class selectors below override
-   the single-class .liquify-glass--svg / --simple rules. */
-.liquify-glass--svg.liquify-glass--before,
-.liquify-glass--simple.liquify-glass--before {
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
-.liquify-glass--before::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  z-index: -1;
-}
-
-.liquify-glass--svg.liquify-glass--before::before {
-  backdrop-filter: var(--liquify-filter) blur(var(--liquify-glass-blur, 2px));
-  -webkit-backdrop-filter: var(--liquify-filter) blur(var(--liquify-glass-blur, 2px));
-}
-
-.liquify-glass--simple.liquify-glass--before::before {
-  backdrop-filter: blur(var(--liquify-backdrop-blur, 2rem)) saturate(1.4);
-  -webkit-backdrop-filter: blur(var(--liquify-backdrop-blur, 2rem)) saturate(1.4);
 }
 
 /* ════════ Dynamic cover background (created by theme.js) ════════ */
@@ -84,7 +63,49 @@
   opacity: 1;
 }
 
-/* Animated Background - Apple Music Style */
+/* Animated background — @kawarp/core's WebGL domain warp. The two canvases are
+   crossfaded by theme.js on a track change; the blur, warp, speed, saturation
+   and scale live inside the renderer, so only brightness, contrast and opacity
+   are left for CSS to apply here. Brightness is the same variable the static
+   layers use, so the slider keeps meaning one thing across every mode. */
+.liquify-kawarp-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+  /* On the container, not on each canvas: during a crossfade both are on
+     screen, so this is one full-screen filter pass per frame instead of two. */
+  filter: brightness(var(--liquify-kawarp-brightness, 45%)) contrast(var(--liquify-kawarp-contrast, 100%));
+}
+
+.liquify-kawarp-bg.active {
+  opacity: 1;
+}
+
+.liquify-kawarp-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  /* Stacked rather than cross-dissolved: the outgoing canvas stays fully opaque
+     underneath until the incoming one covers it. Two layers at 50% don't
+     composite back to 100%, they leave a hole. */
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+.liquify-kawarp-canvas.active {
+  opacity: 1;
+}
+
+/* Animated background, tile engine — the original Apple-Music-style blob field,
+   kept selectable beside Kawarp. Blur and brightness are its own stored values
+   (defaults 50px / 60%, what used to be hard-coded here), so switching engines
+   doesn't drag the other one's numbers along. */
 .liquify-animated-bg {
   position: fixed;
   inset: 0;
@@ -107,7 +128,7 @@
   /* Darkened through the filter, not opacity: opacity made the blobs
      see-through and let the app behind them show. Opacity is left to the
      A/B crossfade alone. */
-  filter: blur(50px) brightness(60%) saturate(1.2);
+  filter: blur(var(--liquify-tiles-blur, 50px)) brightness(var(--liquify-tiles-brightness, 60%)) saturate(1.2);
   opacity: 0;
   animation: liquify-spin-normal 20s linear infinite;
   transition: opacity 0.6s ease;
@@ -116,10 +137,10 @@
      y=1500 down — barely half the screen covered. Each blob is a circle centred
      in its half of the screen (25% / 75%), overlapping across the middle. The
      diameter is a full viewport width: the corners sit ~0.38 widths from a
-     centre and blur(50px) stops covering ~75px short of the circle's edge, so
-     anything smaller leaves them bare. margin-top resolves against width just
-     like width does, so top:50% pulled back by half the diameter centres it
-     vertically at any aspect ratio. */
+     centre and the blur stops covering short of the circle's edge, so anything
+     smaller leaves them bare. margin-top resolves against width just like width
+     does, so top:50% pulled back by half the diameter centres it vertically at
+     any aspect ratio. */
   width: 100%;
   aspect-ratio: 1;
   top: 50%;
@@ -218,6 +239,37 @@
   max-width: none;
 }
 
+/* Top bar action buttons (What's New, Friend Activity, …) match
+   #liquify-settings-gear-btn from src/settings/gear.ts: same 47px box, so the
+   hitbox grows with it, plus the same radius, shadow, colors and hover. */
+.main-actionButtons-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 47px;
+  height: 47px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-subdued);
+  align-self: center;
+  box-shadow: var(--liquify-shadow);
+  border-radius: 17px;
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+/* Scoped to the host so it beats the later .e-10860-legacy-button:hover scale. */
+.main-actionButtons .main-actionButtons-button:hover {
+  color: var(--text-base);
+  transform: scale(1.05);
+}
+
+.main-actionButtons-button svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
 .main-userWidget-box {
   background-color: transparent !important;
   border-radius: 17px;
@@ -292,7 +344,32 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-bright-
 span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-negative-set.e-10451-legacy-button--medium.V2fMzLP0dWw4E5zO,
 .view-homeShortcutsGrid-shortcut .view-homeShortcutsGrid-PlayButtonContainer .view-homeShortcutsGrid-playButton,
 span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-bright-accent-set.e-10451-legacy-button--medium,
-span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-bright-accent-set.e-10451-legacy-button--large {
+span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-bright-accent-set.e-10451-legacy-button--large,
+span.e-10810-overflow-wrap-anywhere.e-10810-button-primary__inner.encore-bright-accent-set.e-10810-button-icon-only--large,
+span.e-10810-overflow-wrap-anywhere.e-10810-button-primary__inner.encore-bright-accent-set.e-10810-button-icon-only--medium,
+span.e-10810-overflow-wrap-anywhere.e-10810-button-primary__inner.encore-inverted-light-set.e-10810-button-icon-only--medium,
+.bTgBWvuzt0s_dQWLj2OL,
+.D0qWErHdvHknfXqr6zOl,
+.jAPoQzdSobJR8JcMctyg,
+.I_rmSQsigYRs2UvtwERh,
+.ZerbJYyhS0yvCyAvRiGd,
+.x0Tk9K1tu0sFwdD5iNF5 .IQI1MMR9t78Vtcj_40sk,
+.At_PezR11Vm2qa_1CMwg,
+.YSBtq6aii9APt8oZSI7i,
+.xo_9j50ydtOsuZO_EU4A,
+.miQxkQPT6ObnldFON6FU.ld3z5Q3JjDbpgeQHQZBw.zjfPZg7eRPRNKo5ZyddA,
+.BO7PHyCzLziWtONPjqy5 .ghNKVQBKy9QOG1tliXir.GX_NJQejPGKCSthdrXMr,
+.o9yX_DM53NuKTbquDhjO .rRh3T2ADQrfMkLLfkgBq.dDIwDEEbfTlYToGrDBRV,
+.jGRA1DNjiCJ65xTLzlXE .oCrHfQvaQyOJy1FC6NTw,
+.vyAIJoMJIJEJhYzb2Y2p,
+.uM9we09EwoxEy6yzw8aD,
+.ZCi2PpNd6KKLfd7MfukT,
+.Omx0JsN5iM9OsHoy14g3,
+.Gs2EwEu259e_Q_vcVyCx,
+.BGdcsJhkf4JOCIGu5one,
+.suqvnFaPhz7I0S4ZaIqe,
+._image-container_1ysjf_7,
+.i6cSWVvYHhVzx_xrAUQa .HXIRH5NT_lLuTYIW00x6 {
   position: relative;
 
   &::after {
@@ -375,9 +452,8 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-bright-
 }
 
 .QTPPCyC4V18wBUZA {
-  display: none;
+  background-color: transparent;
 }
-
 
 .NJh1B8rnlSUlK7sY {
   background-color: transparent;
@@ -497,9 +573,7 @@ button.e-10451-legacy-button.e-10451-legacy-button-tertiary.e-10451-overflow-wra
 }
 
 .main-nowPlayingView-headerWrapper {
-  width: 93%;
   border-radius: 20px;
-  margin: auto;
   margin-top: 15px;
   box-shadow: var(--liquify-shadow);
   margin-bottom: 15px;
@@ -757,27 +831,40 @@ dialog {
 
 /*Now playing bar*/
 
-.Root__now-playing-bar {
+/* width, height and radius come from the player settings (src/settings/features/player.ts) */
+.z0qdvwslOFVOAihShLIq {
   width: 70%;
   margin: auto;
-  border-radius: 20px;
+  border-radius: 25px;
   box-shadow: var(--liquify-shadow);
-  transition: width 0.5s ease;
+  transition: width 0.5s ease, height 0.5s ease;
   background-color: transparent;
 }
 
-/* The custom player height is set on .Root__now-playing-bar, but Spotify's own
-   container keeps its fixed height and sits flush against the top, leaving the
-   controls stranded up there.
+/* The custom player height is set on the bar, but Spotify's own container keeps
+   its fixed height and sits flush against the top, leaving the controls stranded
+   up there.
    A column flex box centres it on the vertical (main) axis while the horizontal
    (cross) axis still stretches by default — so the container stays full width
    and its internal grid is untouched. Centring the container itself with
    `display:flex; align-items:center` instead collapses that grid to content
    width. A no-op at the default height, where bar and container match. */
-.Root__now-playing-bar {
+.z0qdvwslOFVOAihShLIq {
   display: flex;
   flex-direction: column;
   justify-content: center;
+}
+
+/* player cover rim; on an ::after because the cover image covers the slot's own
+   inset shadow. border-radius: inherit follows the cover radius and vinyl settings */
+[data-testid="now-playing-widget"] [data-testid="CoverSlotCollapsed__container"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: var(--liquify-shadow);
+  border-radius: inherit;
+  z-index: 4;
 }
 
 .main-connectBar-connectBar.main-connectBar-connected {
@@ -806,7 +893,7 @@ button.e-10451-legacy-button.e-10451-legacy-button-tertiary.e-10451-overflow-wra
 }
 
 @media (max-width: 1100px) {
-  .Root__now-playing-bar {
+  .z0qdvwslOFVOAihShLIq {
     width: 100% !important;
   }
 }
@@ -829,7 +916,6 @@ button.e-10451-legacy-button.e-10451-legacy-button-tertiary.e-10451-overflow-wra
 .JDUQ8zTo6EUgHoYt {
   height: fit-content;
   padding: 20px;
-  margin-bottom: 20px;
   border-radius: 20px;
   box-shadow: var(--liquify-shadow);
 }
@@ -1158,9 +1244,8 @@ button.e-10451-legacy-button.e-10451-legacy-button-tertiary.e-10451-overflow-wra
 
 /*New Homescreen layout start*/
 
-/* .main-home-content section box + the .main-card-cardContainer / .LXxEtdyreLg2dh0C
-   heights are injected at runtime by the "Use New Homescreen Layout" toggle
-   (src/settings/features/homeLayout.ts) so they can be turned off. */
+/* the home section boxes are injected at runtime by the "Use New Homescreen Layout"
+   toggle (src/settings/features/homeLayout.ts) so they can be turned off. */
 
 .main-card-cardContainer {
   box-shadow: var(--liquify-shadow);
@@ -1855,17 +1940,10 @@ button.e-10451-legacy-button.e-10451-legacy-button-tertiary.e-10451-overflow-wra
   background-color: transparent;
 }
 
-/* Context menu glass lives on the ::before layer (theme.ts { applyTo: 'before' }).
-   Box geometry comes from the generic .liquify-glass--before::before rule near
-   the top; here we add the menu's drop shadow and darken the backdrop a touch
-   for readability (matches the legacy brightness(0.7)). */
-.main-contextMenu-menu.liquify-glass--before::before {
+/* Context menu glass lives on a ::before layer (theme.ts before: true, which
+   also sets its geometry, blur and darkening); here we add the rim. */
+.main-contextMenu-menu::before {
   box-shadow: var(--liquify-shadow);
-}
-
-.main-contextMenu-menu.liquify-glass--svg.liquify-glass--before::before {
-  backdrop-filter: var(--liquify-filter) blur(var(--liquify-glass-blur, 5px)) brightness(0.7);
-  -webkit-backdrop-filter: var(--liquify-filter) blur(var(--liquify-glass-blur, 5px)) brightness(0.7);
 }
 
 .main-contextMenu-menu {
@@ -1881,10 +1959,111 @@ button.e-10451-legacy-button.e-10451-legacy-button-tertiary.e-10451-overflow-wra
   box-shadow: none;
 }
 
-/* Popup glass on the ::before layer (theme.ts { applyTo: 'before' }). Box
-   geometry + backdrop-filter come from the generic .liquify-glass--before
-   rules near the top; here we just add the drop shadow. */
-.xamNkt5LX9o8aL1q.liquify-glass--before::before {
+/* Context menu (.l1Ov7…, submenus are nested inside its items) and the library
+   "Create" menu (.Wwpyu…). Glass lives on a ::before layer (theme.ts before: true);
+   isolation keeps that z-index:-1 layer inside the menu without making the menu a
+   containing block, which would let its overflow clip the submenus. */
+.l1Ov7CMEDnAqk63BPZvI,
+.WwpyuVjaoJUdGwq5SfNQ {
+  background-color: transparent;
+  border-radius: 20px;
+  box-shadow: none;
+  isolation: isolate;
+}
+
+.l1Ov7CMEDnAqk63BPZvI::before,
+.WwpyuVjaoJUdGwq5SfNQ::before {
+  box-shadow: var(--liquify-shadow);
+}
+
+/* room for the hover scale inside the menu's overflow */
+.l1Ov7CMEDnAqk63BPZvI {
+  padding: 8px;
+  scrollbar-width: none;
+}
+
+.l1Ov7CMEDnAqk63BPZvI .iVeJpmLBo_ZjJBt1spaC {
+  border-radius: 12px;
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1), box-shadow 0.28s ease !important;
+}
+
+.l1Ov7CMEDnAqk63BPZvI .iVeJpmLBo_ZjJBt1spaC:hover,
+.l1Ov7CMEDnAqk63BPZvI .iVeJpmLBo_ZjJBt1spaC:not([aria-checked=true]):focus,
+.l1Ov7CMEDnAqk63BPZvI .iVeJpmLBo_ZjJBt1spaC[aria-expanded=true] {
+  background-color: transparent;
+  box-shadow: var(--liquify-shadow);
+  transform: scale(1.03);
+}
+
+.WwpyuVjaoJUdGwq5SfNQ {
+  padding: 12px;
+}
+
+.WwpyuVjaoJUdGwq5SfNQ .hQeFi01SZsZitKpMEvtQ + .hQeFi01SZsZitKpMEvtQ {
+  margin-top: 8px;
+}
+
+.WwpyuVjaoJUdGwq5SfNQ .kCyUDbgy9dO1iu0sxx8t {
+  background-color: transparent;
+  border-radius: 14px;
+  box-shadow: var(--liquify-shadow);
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1), box-shadow 0.28s ease !important;
+}
+
+.WwpyuVjaoJUdGwq5SfNQ .kCyUDbgy9dO1iu0sxx8t:hover,
+.WwpyuVjaoJUdGwq5SfNQ .kCyUDbgy9dO1iu0sxx8t:focus {
+  background-color: transparent;
+  transform: scale(1.03);
+}
+
+/* "Add to playlist" popup; folder submenus are .ViRU… too, nested inside the
+   parent's overflow, so same ::before glass + isolation as the context menu */
+.ViRU4WGs4wlDqn0wUPay {
+  background: transparent;
+  border-radius: 20px;
+  box-shadow: none;
+  isolation: isolate;
+}
+
+.ViRU4WGs4wlDqn0wUPay::before {
+  box-shadow: var(--liquify-shadow);
+}
+
+.ViRU4WGs4wlDqn0wUPay .oQGUg0Q8t1qLMvn0CrJR {
+  background: transparent;
+}
+
+/* footer's dark fade over the list */
+.ViRU4WGs4wlDqn0wUPay .oQGUg0Q8t1qLMvn0CrJR::before {
+  display: none;
+}
+
+/* the scroller clips at the rows' left edge; inset them so the hover scale fits */
+.ViRU4WGs4wlDqn0wUPay .VZErtL5b4aOczCh7jmGq {
+  padding-inline: 6px 18px;
+}
+
+.ViRU4WGs4wlDqn0wUPay .lZsmTu5EXmadCuwon1Jw {
+  border-radius: 17px;
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1), box-shadow 0.28s ease !important;
+}
+
+.ViRU4WGs4wlDqn0wUPay .lZsmTu5EXmadCuwon1Jw > :first-child {
+  border-radius: inherit;
+}
+
+.ViRU4WGs4wlDqn0wUPay .lZsmTu5EXmadCuwon1Jw:hover,
+.ViRU4WGs4wlDqn0wUPay .lZsmTu5EXmadCuwon1Jw[aria-expanded=true] {
+  box-shadow: var(--liquify-shadow);
+  transform: scale(1.03);
+}
+
+.ViRU4WGs4wlDqn0wUPay .lZsmTu5EXmadCuwon1Jw:hover > :first-child {
+  background-color: transparent;
+}
+
+/* Popup glass on a ::before layer (theme.ts before: true); here we just add the rim. */
+.xamNkt5LX9o8aL1q::before {
   box-shadow: var(--liquify-shadow);
 }
 
@@ -1906,7 +2085,6 @@ button.e-10451-legacy-button.e-10451-legacy-button-tertiary.e-10451-overflow-wra
 .main-contextMenu-menuItemButton[aria-expanded=true] {
   background-color: transparent;
   box-shadow: var(--liquify-shadow);
-  border-radius: 15px;
 }
 
 .gke5k3GmXyE2J5Pm>:first-child {
@@ -1937,9 +2115,14 @@ button.e-10451-legacy-button.e-10451-legacy-button-tertiary.e-10451-overflow-wra
 .marketplace-header {
   background-color: transparent;
   border-radius: 20px;
-  box-shadow: var(--liquify-shadow);
   padding: 10px;
   top: 77px;
+}
+
+/* The header's glass sits on this ::before (theme.ts before: true), so the rim
+   goes here too — on the header itself it would sit under the glass layer. */
+.marketplace-header::before {
+  box-shadow: var(--liquify-shadow);
 }
 
 .marketplace-tabBar-headerItemLink {
@@ -2274,9 +2457,7 @@ button.e-10451-legacy-button.e-10451-legacy-button-tertiary.e-10451-overflow-wra
 .lyrics-lyrics-contentContainer .ReC7DlF3I_k9g6Vv {
   align-self: center;
 }
-.lyrics-lyrics-container.Q6I8DeCZJCsdB3UQ {
-    height: calc(100vh - 18px - calc(90px + 2 * var(--encore-spacing-base)));
-}
+
 .HOf9H18Ya0DkJ4_K {
   background-color: transparent;
 }
@@ -2434,10 +2615,1720 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-bright-
   padding-bottom: 9px;
 }
 
+.Root__right-sidebar-peek {
+  background-color: transparent;
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+.e-10810-legacy-box--interactive:hover::after {
+  background-color: transparent;
+}
+
+.e-10810-legacy-chip__inner {
+  border-radius: 12px;
+  box-shadow: var(--liquify-shadow);
+}
+
+span.e-10810-overflow-wrap-anywhere.e-10810-button-primary__inner.encore-bright-accent-set.e-10810-button-icon-only--large {
+  border-radius: 15px;
+}
+
+.e-10810-legacy-button-secondary {
+  border-radius: 12px;
+  border: none;
+  box-shadow: var(--liquify-shadow);
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.e-10810-legacy-button-secondary:hover {
+  transform: scale(1.05);
+}
+
+.e-10810-tab-item {
+  border-radius: 17px;
+}
+
+.e-10810-tab-item:hover {
+  box-shadow: var(--liquify-shadow);
+}
+
+.e-10810-legacy-box.e-10810-legacy-box--naked.e-10810-legacy-box--interactive.e-10810-legacy-box--padding-custom.e-10810-legacy-box--padding-block-start-custom.e-10810-legacy-box--padding-block-end-custom.e-10810-legacy-box--hover-custom.e-10810-legacy-box--min-size.e-10810-legacy-list-row.e-10810-legacy-list-row--has-leading.Z557o5iO1x0aSAXt.main-useDropTarget-base.main-useDropTarget-track.main-useDropTarget-local.main-useDropTarget-episode.kCuoeTp_4F8B1vXL.main-useDropTarget-album,
+.e-10810-legacy-box.e-10810-legacy-box--naked.e-10810-legacy-box--interactive.e-10810-legacy-box--padding-custom.e-10810-legacy-box--padding-block-start-custom.e-10810-legacy-box--padding-block-end-custom.e-10810-legacy-box--hover-custom.e-10810-legacy-box--min-size.e-10810-legacy-list-row.e-10810-legacy-list-row--has-leading.Z557o5iO1x0aSAXt.main-useDropTarget-base {
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1), box-shadow 0.28s ease !important;
+  border-radius: 20px;
+}
+
+.e-10810-legacy-box.e-10810-legacy-box--naked.e-10810-legacy-box--interactive.e-10810-legacy-box--padding-custom.e-10810-legacy-box--padding-block-start-custom.e-10810-legacy-box--padding-block-end-custom.e-10810-legacy-box--hover-custom.e-10810-legacy-box--min-size.e-10810-legacy-list-row.e-10810-legacy-list-row--has-leading.Z557o5iO1x0aSAXt.main-useDropTarget-base.main-useDropTarget-track.main-useDropTarget-local.main-useDropTarget-episode.kCuoeTp_4F8B1vXL.main-useDropTarget-album:hover,
+.e-10810-legacy-box.e-10810-legacy-box--naked.e-10810-legacy-box--interactive.e-10810-legacy-box--padding-custom.e-10810-legacy-box--padding-block-start-custom.e-10810-legacy-box--padding-block-end-custom.e-10810-legacy-box--hover-custom.e-10810-legacy-box--min-size.e-10810-legacy-list-row.e-10810-legacy-list-row--has-leading.Z557o5iO1x0aSAXt.main-useDropTarget-base:hover {
+  transform: scale(1.03);
+  box-shadow: var(--liquify-shadow);
+}
+
+.e-10810-legacy-box--tinted {
+  background-color: transparent;
+  border-radius: 20px;
+  box-shadow: var(--liquify-shadow);
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.e-10810-legacy-box--tinted:hover {
+  transform: scale(1.03);
+}
+
+.e-10810-button-primary__inner {
+  border-radius: 12px;
+}
+
+/* The small icon-only primary buttons are the play buttons that sit on a card
+   or a row. No disc behind them at all: at that size a filled circle over
+   artwork reads as a badge rather than a control. The colour set that fills it
+   white also forces dark ink, so the glyph has to be turned light once the fill
+   is gone — the same pair of moves the playbar's own play button makes.
+   Unversioned, and spelled out for :hover and :active because accent.ts paints
+   those at !important from a selector carrying the same pseudo-class. */
+[class*="button-primary__inner"][class*="button-icon-only--small"],
+[class*="-legacy-button-primary"]:hover>[class*="button-primary__inner"][class*="button-icon-only--small"],
+[class*="-legacy-button-primary"]:active>[class*="button-primary__inner"][class*="button-icon-only--small"] {
+  background-color: transparent !important;
+  color: #fff !important;
+}
+
+[class*="button-primary__inner"][class*="button-icon-only--small"] svg,
+[class*="button-primary__inner"][class*="button-icon-only--small"] path {
+  fill: currentColor !important;
+}
+
+.main-nowPlayingView-headerButton {
+  box-shadow: var(--liquify-shadow);
+  border-radius: 12px;
+  background-color: transparent !important;
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.main-nowPlayingView-headerButton:hover {
+  transform: scale(1.05);
+}
+
+.e-10810-legacy-button {
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.J3ndazz3tjkb4CYQ {
+  background-color: transparent;
+}
+
+.J3ndazz3tjkb4CYQ:before {
+  background-color: transparent;
+  border-radius: 10px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.Root__right-sidebar-overlay {
+  background-color: transparent;
+  border-radius: 20px;
+  backdrop-filter: blur(2rem);
+}
+
+.e-10810-tab-item:active {
+  background-color: transparent;
+}
+
+.bw30a3q0k1omeLo6 {
+  background-color: transparent;
+}
+
+h2.e-10810-text.encore-text-title-small.encore-internal-color-text-base,
+button.e-10810-legacy-button.e-10810-legacy-button-tertiary.e-10810-overflow-wrap-anywhere.encore-text-body-medium-bold.e-10810-button-tertiary--condensed-all.encore-internal-color-text-base.V2fMzLP0dWw4E5zO,
+p.e-10810-text.encore-text-body-small.encore-internal-color-text-base {
+  color: white;
+}
+
+.main-entityHeader-container.main-entityHeader-withBackgroundImage.f9g666m0NG0chhI0 {
+  background-color: transparent !important;
+}
+
+.gZ0ooTwhYHpF0q8S {
+  background-color: transparent;
+  border-radius: 20px;
+}
+
+.V0GcyC1icnYjOhd1 {
+  border-radius: 13px;
+  box-shadow: var(--liquify-shadow);
+}
+
+/*Style fixes 05.10.26*/
+
+/* the layout radius settings drive these variables (src/settings/features/layoutRadius.ts) */
+.bTgBWvuzt0s_dQWLj2OL {
+  background-color: transparent;
+  border-radius: var(--liquify-main-radius, 20px);
+}
+
+.kflHPd1wGLg8GjJjmpc6 {
+  background-image: none;
+  background-color: transparent !important;
+}
+
+.bQsutxbyIOatthweRHfK {
+  background-color: transparent;
+  border-radius: var(--liquify-nav-radius, 20px);
+  box-shadow: var(--liquify-shadow);
+}
+
+.jpHQLr33ZT5pJGBVFmjJ {
+  background-color: transparent;
+  border-radius: 20px;
+}
+
+.WWTxshVPO07BZLrdUL3h {
+  background-color: transparent;
+}
+
+.D0qWErHdvHknfXqr6zOl {
+  background-color: transparent;
+  border-radius: var(--liquify-right-radius, 20px);
+  overflow: hidden;
+}
+
+.gah5O0fYgkGMZLdwy_g5,
+.gah5O0fYgkGMZLdwy_g5:before {
+  background-color: transparent;
+}
+
+.jAPoQzdSobJR8JcMctyg {
+  border-radius: 20px;
+}
+
+.yanzBsLcAL8wDzLb8QrU {
+  background-color: transparent;
+  border-radius: 20px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.g5aJadfOeo4rVxfv4yPT {
+  margin-left: 10px;
+  margin-right: 10px;
+}
+
+.SZZaGSgPlvbMy6EmCYPy {
+  background-color: transparent !important;
+}
+
+.uUrwzgxT0uv5kJSygl8V {
+  background: none;
+}
+
+.IA4iGG9XYovF8ZeEsq8A {
+  background-image: none;
+  background-color: transparent !important;
+}
+
+.e-10860-legacy-chip__inner {
+  border-radius: 13px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.UbzV6GmaFXRSbQNfaAZL.ajHBc3IuiQpQkTmGSCcr {
+  box-shadow: var(--liquify-shadow);
+  min-height: 0px !important;
+  height: fit-content !important;
+  margin-top: 15px !important;
+  width: 98%;
+  margin: auto;
+  padding: 20px !important;
+  border-radius: 20px;
+}
+
+.nzYvaC60xSKEJR6fewog {
+  padding: 0px;
+}
+
+.I_rmSQsigYRs2UvtwERh {
+  border-radius: 20px;
+}
+
+.NG0KBybUCTo8_SxXHF3N {
+  background-color: transparent;
+  border-radius: 20px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.aFTT7HhSi7nKw___DYTw {
+  background-color: transparent;
+}
+
+.dlCd0Cz0sESYGOnuo02M:after {
+  background-image: none;
+}
+
+.ZerbJYyhS0yvCyAvRiGd {
+  background-color: transparent;
+  border-radius: 20px;
+}
+
+.I2aoV46rpCN4PpPXyG97 {
+  background-color: transparent;
+}
+
+.x0Tk9K1tu0sFwdD5iNF5 {
+  background-color: transparent;
+  border-radius: 20px;
+  box-shadow: var(--liquify-shadow);
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.x0Tk9K1tu0sFwdD5iNF5:hover {
+  transform: scale(1.03);
+}
+
+.e-10860-legacy-box--interactive:hover:after {
+  background-color: transparent;
+}
+
+.CDSPLe2djW9sHmj1Z9gs {
+  border-radius: 20px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.CDSPLe2djW9sHmj1Z9gs {
+  margin-right: 10px;
+}
+
+/* card play button: centered over the whole cover instead of bottom-right */
+.CDSPLe2djW9sHmj1Z9gs .mfc6xIi99Ld5z_EtlkLR {
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 20px;
+  box-shadow: none;
+  transform: none;
+}
+
+/* the overlay now covers the cover, so only the button may catch clicks.
+   .Tw7xj… is Spotify's "visible" state while the card's context is playing */
+.CDSPLe2djW9sHmj1Z9gs:hover .mfc6xIi99Ld5z_EtlkLR,
+.CDSPLe2djW9sHmj1Z9gs .Tw7xjcxiFsFcDeeh27O9 {
+  transform: none;
+  pointer-events: none;
+}
+
+/* blur the cover itself while the card is hovered; scaled up and clipped so
+   the blur doesn't fade out at the edges */
+.CDSPLe2djW9sHmj1Z9gs .At_PezR11Vm2qa_1CMwg {
+  overflow: hidden;
+}
+
+.CDSPLe2djW9sHmj1Z9gs .At_PezR11Vm2qa_1CMwg img {
+  transition: filter 0.2s ease-out, scale 0.2s ease-out;
+}
+
+.CDSPLe2djW9sHmj1Z9gs:is(:hover, :has(.Tw7xjcxiFsFcDeeh27O9)) .At_PezR11Vm2qa_1CMwg img {
+  filter: blur(8px);
+  scale: 1.15;
+}
+
+.mfc6xIi99Ld5z_EtlkLR .kIdwlYLsDCgBSpsfutG6 {
+  pointer-events: auto;
+  transition: scale 0.28s cubic-bezier(0.3, 2.25, 0.32, 1);
+}
+
+.CDSPLe2djW9sHmj1Z9gs:hover .kIdwlYLsDCgBSpsfutG6,
+.CDSPLe2djW9sHmj1Z9gs .Tw7xjcxiFsFcDeeh27O9 .kIdwlYLsDCgBSpsfutG6 {
+  scale: 1.3;
+}
+
+.CDSPLe2djW9sHmj1Z9gs .kIdwlYLsDCgBSpsfutG6:hover {
+  scale: 1.45;
+}
+
+/* shelf headers reserve 48px for a pretitle ("Für"), leaving dead space above titles like "Zuletzt".
+   Home shelves use .PBnL…, regular shelves (artist page, "show all") .lm9r…, .tjIa… is a third variant */
+:is(.PBnLFYrjIPBbWdTWUU_w, .lm9rP9NeraWAYtxV_J1F, .tjIagy5FqvfB38gJdDeP) > :first-child {
+  min-height: 0;
+}
+
+/* ...except next to "new release from", whose header is 48px (avatar); keep both rows level */
+.QVX8Getzkg44Frgfu0wF + .YeMXHXUM5LesBemNwrlw .PBnLFYrjIPBbWdTWUU_w > :first-child {
+  min-height: 48px;
+}
+
+.VyDGISqVe_mffhTkwoOB {
+  box-shadow: var(--liquify-shadow);
+  padding: 15px;
+  border-radius: 20px;
+}
+
+/* the artist page stacks its shelves in a plain block container without any gap */
+[data-testid="artist-page"] .contentSpacing:has(> .VyDGISqVe_mffhTkwoOB) > :is(.VyDGISqVe_mffhTkwoOB, .z6vAvEgoryjASg1A24GZ) + * {
+  margin-top: 24px;
+}
+
+/* the card grid bleeds -12px out of the shelf and the cards' margin-right only pads
+   one side; inside the box, keep it flush and split the card margin evenly. Don't
+   add a column-gap: Spotify counts how many cards fit in one row without one and
+   hides the rest, so a gap pushes the last card into a second row below the box */
+.VyDGISqVe_mffhTkwoOB .z6vAvEgoryjASg1A24GZ {
+  margin-inline: 0;
+}
+
+.VyDGISqVe_mffhTkwoOB .CDSPLe2djW9sHmj1Z9gs {
+  margin-inline: 5px;
+}
+
+.qPY4gsmEW6Bq3CnNXAIE .X6OstObvuolbOo_pF6XN {
+  background-color: transparent !important;
+  border-radius: 17px;
+  box-shadow: var(--liquify-shadow) !important;
+}
+
+.LNpoPDYnF14Zg2Ml0SEK {
+  box-shadow: var(--liquify-shadow);
+  border-radius: 20px;
+  padding: 15px;
+}
+
+.e-10860-legacy-button-secondary {
+  border-radius: 13px;
+  border: none;
+  box-shadow: var(--liquify-shadow);
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.e-10860-legacy-button-secondary:hover {
+  transform: scale(1.05);
+}
+
+.hvkA6ouKb45NIm4_O9LV {
+  border-radius: 20px;
+}
+
+.At_PezR11Vm2qa_1CMwg {
+  background-color: transparent;
+  border-radius: 20px;
+}
+
+.uCpbyRyKRYhEnUmXhDjT {
+  background-color: transparent !important;
+  border-radius: 12px;
+  box-shadow: var(--liquify-shadow);
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.uCpbyRyKRYhEnUmXhDjT:hover {
+  transform: scale(1.05);
+}
+
+.Ode73RBFf6q1DD66RZo5 {
+  border-radius: 12px;
+  box-shadow: var(--liquify-shadow);
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.Ode73RBFf6q1DD66RZo5:hover {
+  transform: scale(1.05);
+}
+
+button.e-10860-legacy-button.e-10860-legacy-button-tertiary.e-10860-overflow-wrap-anywhere.encore-text-body-small-bold.e-10860-legacy-button--small.e-10860-button-tertiary--small.e-10860-button--trailing.e-10860-button-tertiary--condensed.e-10860-button-tertiary--text-subdued.encore-internal-color-text-subdued {
+  border-radius: 12px;
+  box-shadow: var(--liquify-shadow);
+  padding: 7px;
+}
+
+.kmo_ZUsxXMkrPrJGwR5V {
+  background-color: transparent;
+}
+
+.IMvgRTH54tN6G9lSpaHg.pDnmSSubLQYcPyfsjA7x,
+.lRM_4sjh9quAjFZ1xVzp:before,
+.lRM_4sjh9quAjFZ1xVzp:after {
+  background: none;
+}
+
+.IMvgRTH54tN6G9lSpaHg.pDnmSSubLQYcPyfsjA7x .lRM_4sjh9quAjFZ1xVzp:before {
+  background: none;
+}
+
+.Nff4p6fqfqSvZ3eXKTTt:before {
+  background: none;
+}
+
+.A6FK744wQHPY6B6S2V1R>video {
+  border-radius: 0px;
+}
+
+.lRM_4sjh9quAjFZ1xVzp {
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 1) 80%, rgba(0, 0, 0, 0) 100%);
+  mask-repeat: no-repeat;
+  mask-size: 100% 100%;
+}
+
+.mEPiwea_nZvwH3sF3N88,
+.bp988r0Q6Nr3dF2RSCIP,
+.twgsllDqJ3mEv5Alw9rO {
+  background: none;
+}
+
+.VctIqOk4mxuofMvv0db4 {
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1), box-shadow 0.28s ease !important;
+  border-radius: 20px;
+}
+
+.VctIqOk4mxuofMvv0db4:hover {
+  box-shadow: var(--liquify-shadow);
+  transform: scale(1.03);
+}
+
+.YSBtq6aii9APt8oZSI7i {
+  border-radius: 12px;
+}
+
+.RPMorDpH9s8fvYeST3Tz {
+  border-radius: 12px !important;
+}
+
+/* Tracklist-Cover Glas rim */
+.U8sHtqY7VctR65ozZQCt:has(> .RPMorDpH9s8fvYeST3Tz) {
+  position: relative;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset-inline-start: 0;
+    top: 50%;
+    width: 40px;
+    height: 40px;
+    translate: 0 -50%;
+    pointer-events: none;
+    /* doppelt, sonst bei 40px kaum sichtbar */
+    box-shadow: var(--liquify-shadow), var(--liquify-shadow);
+    border-radius: 12px;
+  }
+}
+
+.QJeB8A9apRR4gkmZlnSM {
+  background-color: transparent;
+  border-radius: 13px;
+  box-shadow: var(--liquify-shadow);
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.QJeB8A9apRR4gkmZlnSM:hover {
+  transform: scale(1.03);
+}
+
+.gtE86JC9Em19Qckc99Ug {
+  width: 99.5%;
+  margin: auto;
+  padding: 10px;
+}
+
+.e1NRR9_lRgRwafa1esSw {
+  background-image: none;
+  background-color: transparent !important;
+}
+
+.yvYdZyDIc9bukbMMn5Qe:after {
+  background-image: none;
+}
+
+.skbiXj4RSA0QAr5xDn9P {
+  background-image: none;
+}
+
+.KiLYXau_zZC4Y6HztjLZ {
+  background-color: transparent;
+}
+
+._4Zu33Dd_2NUEAyg829Qd .g5aJadfOeo4rVxfv4yPT {
+  background-color: transparent;
+  box-shadow: var(--liquify-shadow);
+}
+
+.f7EGsBVuoBpU5CV0hMuZ {
+  background-color: transparent;
+  border-radius: 13px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.xo_9j50ydtOsuZO_EU4A {
+  border-radius: 20px;
+}
+
+.zyugqDUpsiWa8v7oczU1 {
+  top: 78px !important;
+  box-shadow: var(--liquify-shadow);
+  width: 99%;
+  margin: auto;
+  border-radius: 12px;
+  box-sizing: border-box;
+  margin-bottom: 10px;
+}
+
+.h3nJTxxmxIYRP5Aft1CC {
+  background-color: transparent !important;
+  border-radius: 20px;
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1), box-shadow 0.28s ease !important;
+}
+
+.h3nJTxxmxIYRP5Aft1CC:hover {
+  box-shadow: var(--liquify-shadow);
+  transform: scale(1.03);
+}
+
+.h3nJTxxmxIYRP5Aft1CC.QfR1lK07GZcvLZKPXHPP {
+  background-color: transparent;
+  box-shadow: var(--liquify-shadow);
+}
+
+.e-10860-legacy-box--tinted {
+  background-color: transparent;
+  box-shadow: var(--liquify-shadow)
+}
+
+.wuAdcQqNfjsOEgHrgxpT.xKnV5tbVbVw_5K1j7yvB {
+  border-radius: 12px;
+}
+
+.e-10860-chip-clear {
+  border-radius: 12px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.rsWqM7GKHhCUtFP6zaZp {
+  background-color: transparent;
+  border-radius: 20px;
+}
+
+.J6YrvQkOrF0yjqSQ1dH9,
+.D9HGWt2KCleb0Sv3Pm81 {
+  background-color: transparent;
+  border-radius: 20px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.m9_YZKaHedGVNp979Yy7 {
+  background-color: transparent !important;
+  border-radius: 12px;
+  box-shadow: var(--liquify-shadow);
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.m9_YZKaHedGVNp979Yy7:hover {
+  transform: scale(1.05);
+}
+
+.C33NkHdlWH7WFxs0WHNH {
+  background-color: transparent;
+}
+
+.j4n6nxaD2a9THR3VmSpG {
+  background-color: transparent !important;
+  border-radius: 12px;
+  box-shadow: var(--liquify-shadow);
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.j4n6nxaD2a9THR3VmSpG:hover {
+  transform: scale(1.05);
+}
+
+.h3jSYvjnJeubEeQJEVRw {
+  border-radius: 20px;
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1), box-shadow 0.28s ease !important;
+}
+
+.h3jSYvjnJeubEeQJEVRw:hover {
+  box-shadow: var(--liquify-shadow);
+  transform: scale(1.03);
+}
+
+.ARV3NiZZejVvA94UPvrg ._9X2RWV4x_K1nhMcbEgCZ {
+  border-radius: 12px;
+}
+
+.OsDLl_EbSaDJzGA6kqjL.avBp0a9kRTq7eEAoCbYJ {
+  background-color: transparent;
+}
+
+/* Spotify promotes every Encore button to a compositor layer of its own
+   (will-change: transform) - about 150 of them on a playlist page. Every layer
+   makes Chromium's re-layering of the page dearer, and that runs on every scroll
+   frame. Measured in Spotify: 332 -> 155 layers, track list scrolling ~33 -> ~57fps. */
+[class*="-legacy-button"],
+[class*="-legacy-chip"],
+[class^="e-"][class*="-button"],
+[class*=" e-"][class*="-button"] {
+  will-change: auto !important;
+}
+
+/* Home filter chips: the glass pill behind them is a sibling of the chips row
+   (position:absolute; inset:0 on the sticky wrapper), so its width is anchored
+   to the chips' content box instead of being hardcoded. Clamped to the row so
+   it never grows past the visible area when the chips scroll. */
+.o9cVZ8KdDdXGhGS2t2p4 {
+  width: fit-content;
+  anchor-name: --liquify-home-chips;
+}
+
+.goKxWei7aIJdA857U744 {
+  --liquify-chips-pad: 15px;
+  background-color: transparent;
+  border-radius: 20px;
+  left: max(25px, calc(anchor(--liquify-home-chips left) - var(--liquify-chips-pad)));
+  right: max(25px, calc(anchor(--liquify-home-chips right) - var(--liquify-chips-pad)));
+  height: 80%;
+  margin-top: 6px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.goKxWei7aIJdA857U744.cthJwTHIkmtEcnCP_Oov:after {
+  background: transparent;
+}
+
+.NTX5QnnAPQ3vbP3jyNlk.lDx__sFW4RiaJolGIvbe {
+  padding-bottom: 9px;
+}
+
+.Xy9vNpereLbd3oickOEs {
+  background-color: transparent;
+}
+
+.ADPt6jNqMvJsGf_QrfnP {
+  background-color: transparent;
+  border-radius: 20px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.xNEfFvigd_XOEj1_nZSR {
+  background-color: transparent;
+  border-radius: 12px;
+  box-shadow: var(--liquify-shadow);
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.xNEfFvigd_XOEj1_nZSR:hover {
+  transform: scale(1.05);
+}
+
+.NrrHwy5vCB8pNYVxc8oU {
+  background-color: transparent;
+}
+
+/*Artist Page bg*/
+/* positioned against .main-view-container, which is exactly as tall as the main view.
+   .noaT… is the same wrapper when Spotify's dynamic colors are off */
+.N8txqqpJDIs_ueBeNFtb,
+.noaTIqu8A6IyB7ABXzU8 {
+  height: 100%;
+}
+
+.UbzV6GmaFXRSbQNfaAZL.gmb9NAvXgkg8XFMlNTNR {
+  box-shadow: var(--liquify-shadow);
+  min-height: 0px !important;
+  height: fit-content !important;
+  margin-top: 15px !important;
+  width: 98%;
+  margin: auto;
+  padding: 20px !important;
+  border-radius: 20px;
+}
+
+.qtQr7uPKnGMSxLWgth54 {
+  box-shadow: var(--liquify-shadow);
+  padding: 15px;
+  border-radius: 20px;
+}
+
+.PhrrxnpQqpJQdqWtlyIj,
+div:has(> .esdT7NhwpvXK5y8x_AhA) {
+  box-shadow: var(--liquify-shadow);
+  padding: 15px;
+  border-radius: 20px;
+}
+
+.zJpJ7DGpm__TAUnMYhfg {
+  background-color: transparent;
+  border-radius: 20px;
+  box-shadow: var(--liquify-shadow);
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.zJpJ7DGpm__TAUnMYhfg:hover {
+  transform: scale(1.03);
+}
+
+.WUHV3yvmh_gdGie5wFp4 {
+  width: 98%;
+  padding: 10px;
+  margin-top: 10px;
+  margin-bottom: 10px;
+  border-radius: 20px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.b0kbWFp7K9_JqU7W7FqI {
+  background-color: transparent !important;
+  border-radius: 12px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.b0kbWFp7K9_JqU7W7FqI>* {
+  --encore-icon-fill: white !important;
+}
+
+.e-10860-legacy-box.e-10860-legacy-box--naked.e-10860-legacy-box--interactive.e-10860-legacy-box--padding-custom.e-10860-legacy-box--padding-block-start-custom.e-10860-legacy-box--padding-block-end-custom.e-10860-legacy-box--hover-custom.e-10860-legacy-box--min-size.e-10860-legacy-list-row.e-10860-legacy-list-row--has-leading.SrV50IUkKGdrtMamrx2E.WHmePp2RcjDcZf8l9fqg.gDbejgEjnpz9fEKRkCiK.r6xK0R0pC7058PXsz0GY.DioDd4ng50SNLwcMc20A.gmlZ8SqWP_iIhOkv5_g5.ueO1DGD8b_kDJrijm4eA,
+.e-10860-legacy-box.e-10860-legacy-box--naked.e-10860-legacy-box--interactive.e-10860-legacy-box--padding-custom.e-10860-legacy-box--padding-block-start-custom.e-10860-legacy-box--padding-block-end-custom.e-10860-legacy-box--hover-custom.e-10860-legacy-box--min-size.e-10860-legacy-list-row.e-10860-legacy-list-row--has-leading.SrV50IUkKGdrtMamrx2E.WHmePp2RcjDcZf8l9fqg {
+  border-radius: 20px;
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1), box-shadow 0.28s ease !important;
+}
+
+.e-10860-legacy-box.e-10860-legacy-box--naked.e-10860-legacy-box--interactive.e-10860-legacy-box--padding-custom.e-10860-legacy-box--padding-block-start-custom.e-10860-legacy-box--padding-block-end-custom.e-10860-legacy-box--hover-custom.e-10860-legacy-box--min-size.e-10860-legacy-list-row.e-10860-legacy-list-row--has-leading.SrV50IUkKGdrtMamrx2E.WHmePp2RcjDcZf8l9fqg.gDbejgEjnpz9fEKRkCiK.r6xK0R0pC7058PXsz0GY.DioDd4ng50SNLwcMc20A.gmlZ8SqWP_iIhOkv5_g5.ueO1DGD8b_kDJrijm4eA:hover,
+.e-10860-legacy-box.e-10860-legacy-box--naked.e-10860-legacy-box--interactive.e-10860-legacy-box--padding-custom.e-10860-legacy-box--padding-block-start-custom.e-10860-legacy-box--padding-block-end-custom.e-10860-legacy-box--hover-custom.e-10860-legacy-box--min-size.e-10860-legacy-list-row.e-10860-legacy-list-row--has-leading.SrV50IUkKGdrtMamrx2E.WHmePp2RcjDcZf8l9fqg:hover {
+  box-shadow: var(--liquify-shadow);
+  transform: scale(1.03);
+}
+
+.JOsq_4H0UgeETLvv6Wah {
+  background-color: transparent;
+  border-radius: 20px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.M60q5A56_6d4m17Kbosn {
+  box-shadow: var(--liquify-shadow);
+  padding: 11px;
+  border-radius: 12px;
+}
+
+.e-10860-tab-item {
+  border-radius: 15px;
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1), box-shadow 0.28s ease !important;
+}
+
+.e-10860-tab-item:hover {
+  box-shadow: var(--liquify-shadow);
+  transform: scale(1.03);
+}
+
+.e-10860-tab-item:active {
+  background-color: transparent;
+}
+
+.A95qYZKgUJAXYH53nJO9 {
+  box-shadow: var(--liquify-shadow);
+  border-radius: 12px;
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.A95qYZKgUJAXYH53nJO9:hover {
+  transform: scale(1.05);
+}
+
+.e-10860-button-primary__inner:hover {
+  transform: scale(1.03);
+}
+
+.WbemFLA2iwaTLbng7jdc {
+  background-color: transparent;
+  border-radius: 20px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.ZAU9wS6jqWfJxKTQvyfH {
+  box-shadow: var(--liquify-shadow);
+  padding: 20px;
+  border-radius: 20px;
+}
+
+.d7rHODV83neFiPSeUqDB:after {
+  background-image: none;
+  background-color: transparent;
+}
+
+.SGeWGXmFRQhzGSZ8j48u {
+  background-color: transparent;
+}
+
+.mhioaci0tNPZ1eN4nXbB {
+  border-radius: 12px;
+  box-shadow: var(--liquify-shadow);
+  background-color: transparent !important;
+}
+
+span.e-10860-overflow-wrap-anywhere.e-10860-button-primary__inner.encore-bright-accent-set.e-10860-legacy-button--small.e-10860-button--leading {
+  border-radius: 12px;
+  box-shadow: var(--liquify-shadow);
+}
+
+span.e-10860-overflow-wrap-anywhere.e-10860-button-primary__inner.encore-bright-accent-set.e-10860-button-icon-only--large {
+  border-radius: 15px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.e-10860-legacy-button {
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.e-10860-legacy-button:hover {
+  transform: scale(1.03);
+}
+
+.x0Tk9K1tu0sFwdD5iNF5 ._ITzj7UH_2ZD81wa9ULl .HTByCIAIGZANuv5iA9uX {
+  border-radius: 15px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.GJaCaw22Olxis7DERfTg {
+  border-radius: 20px;
+  isolation: isolate;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    pointer-events: none;
+    box-shadow: var(--liquify-shadow);
+    border-radius: inherit;
+  }
+}
+
+.RI3lDBrimDPsR0FtLS3k {
+  background-color: transparent;
+}
+
+span.e-10860-overflow-wrap-anywhere.e-10860-button-primary__inner.encore-inverted-light-set.e-10860-button-icon-only--medium,
+span.e-10860-overflow-wrap-anywhere.e-10860-button-primary__inner.encore-bright-accent-set.e-10860-button-icon-only--medium,
+span.e-10860-overflow-wrap-anywhere.e-10860-button-primary__inner.encore-bright-accent-set.e-10860-button-icon-only--medium {
+  border-radius: 15px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.E8W8bd8vUJi4F3KRvwSM {
+  border-radius: 12px;
+}
+
+.vz4CzNT3MiWz9RNIbOuF {
+  border-radius: 20px;
+
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    pointer-events: none;
+    box-shadow: var(--liquify-shadow);
+    border-radius: inherit;
+  }
+}
+
+.VBHQyT1xMnuK6q3v04tx.zsGE6QfwHX7ZUleMODWP .nVyDKVjzDUKN8CY7oili {
+  background: transparent;
+  border-radius: 12px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.yQozkiZgCBQAsb3Gt6H5 {
+  border-radius: 20px;
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1), box-shadow 0.28s ease !important;
+}
+
+.yQozkiZgCBQAsb3Gt6H5:hover {
+  box-shadow: var(--liquify-shadow);
+  transform: scale(1.03);
+}
+
+.SwPCgecz6IHLFVcuSzXC {
+  background: transparent;
+}
+
+.THlGvOSiMqxNJNS8PJvj {
+  border-radius: 8px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.X17zlk2hq7UQRWvdyKp8 {
+  border-radius: 12px;
+}
+
+.bC1X69yQ98sYTqWv2_nF {
+  border-radius: 20px;
+  box-shadow: var(--liquify-shadow);
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.bC1X69yQ98sYTqWv2_nF:hover {
+  transform: scale(1.03);
+}
+
+.bC1X69yQ98sYTqWv2_nF {
+  --liquify-browse-cover-radius: 20px;
+}
+
+.gCmVWa3Rq_eyKF6EId6E {
+  border-radius: var(--liquify-browse-cover-radius);
+}
+
+.bC1X69yQ98sYTqWv2_nF:has(> .gCmVWa3Rq_eyKF6EId6E)::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  inset-inline-end: 0;
+  width: 45%;
+  aspect-ratio: 1;
+  transform: rotate(25deg) translate(18%, -2%);
+  pointer-events: none;
+  box-shadow: var(--liquify-shadow);
+  border-radius: var(--liquify-browse-cover-radius);
+}
+
+.jt8iLn1_8WQiTuZkY6Ku {
+  border-radius: 20px;
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1), box-shadow 0.28s ease !important;
+}
+
+.jt8iLn1_8WQiTuZkY6Ku:hover {
+  box-shadow: var(--liquify-shadow);
+  transform: scale(1.03);
+}
+
+.t8lBFLU7hCv6Vh5ir3QQ.aCEeuw1km0UzIsHQRaiQ {
+  background: transparent;
+}
+
+.t8lBFLU7hCv6Vh5ir3QQ {
+  border-radius: 12px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.JtCRHzxtnSbldvi5q88I {
+  border-radius: 12px;
+  box-shadow: var(--liquify-shadow);
+  background-color: transparent !important;
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.JtCRHzxtnSbldvi5q88I:hover {
+  transform: scale(1.05);
+}
+
+.EBmKeFEo2GOt4N3G7uoi {
+  background-color: transparent;
+  border-radius: 20px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.QU85p59Ixw8A23ooqQt6 {
+  background-color: transparent !important;
+  border-radius: 20px;
+  box-shadow: var(--liquify-shadow);
+  width: 95%;
+  margin: auto;
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.QU85p59Ixw8A23ooqQt6:hover {
+  transform: scale(1.03);
+}
+
+.POvZRseCI_oO9LIu3eiN,
+.wzC6IOFGHM0mopyh8H3D {
+  background-color: transparent;
+  border-radius: 20px;
+  box-shadow: var(--liquify-shadow);
+}
+
+span.e-10860-overflow-wrap-anywhere.e-10860-button-primary__inner.encore-inverted-set.e-10860-legacy-button--small {
+  border-radius: 12px;
+  box-shadow: var(--liquify-shadow);
+}
+
+span.e-10860-overflow-wrap-anywhere.e-10860-button-primary__inner.encore-inverted-light-set.e-10860-legacy-button--medium {
+  border-radius: 15px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.SnlXBd9tDSDjg6w4TqlK.lVgsUuhaE5SIvV2lxRaV {
+  padding-inline: 0px 0;
+}
+
+.EYVg8yEsGD4dWVtkJFso {
+  background-color: transparent !important;
+  border-radius: 17px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.lj3QDVPoZ9jCW9yX7IJy {
+  background-color: transparent !important;
+  box-shadow: var(--liquify-shadow);
+  border-radius: 12px;
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.lj3QDVPoZ9jCW9yX7IJy:hover {
+  transform: scale(1.05) !important;
+}
+
+.O2mIHDfPwPYFqm1qIbDA {
+  background-color: transparent !important;
+  box-shadow: var(--liquify-shadow);
+  border-radius: 12px;
+  margin-left: 5px;
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.O2mIHDfPwPYFqm1qIbDA:hover {
+  transform: scale(1.05);
+}
+
+.fTcPW1opaLJf91ygHA_P {
+  background-color: transparent !important;
+  box-shadow: var(--liquify-shadow);
+  border-radius: 20px;
+  margin: 10px;
+  top: 10px;
+}
+
+.Rx59R8H1lE7rShTwfSuI {
+  margin-inline: 0px !important;
+}
+
+.hMQWmXZNp6kqu88E1vbA {
+  border-radius: 20px;
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.hMQWmXZNp6kqu88E1vbA:hover {
+  transform: scale(1.03);
+}
+
+.miQxkQPT6ObnldFON6FU.ld3z5Q3JjDbpgeQHQZBw.zjfPZg7eRPRNKo5ZyddA {
+  border-radius: 15px;
+}
+
+.OBaDjdU835YN09jcSuBy.t7AyCiAhZeUyLQUW23IY {
+  background-color: transparent !important;
+  box-shadow: var(--liquify-shadow);
+  margin-bottom: 15px;
+  border-radius: 20px;
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.OBaDjdU835YN09jcSuBy.t7AyCiAhZeUyLQUW23IY:hover {
+  transform: scale(1.03);
+}
+
+.LLLTFpXigcC9ZljBuf2D {
+  box-shadow: var(--liquify-shadow);
+  border-radius: 6px;
+}
+
+.Kj28uOnlSCiRVLoJo_3E {
+  box-shadow: var(--liquify-shadow);
+  border-radius: 6px;
+}
+
+.ZyNRaLnTORx62DaN5mGC {
+  border-radius: 12px;
+}
+
+.G9SgzWboYhhetaj0PNrD {
+  margin-bottom: 10px;
+}
+
+.RHKi_XpRWCqN6ta7KH69 {
+  background-color: transparent !important;
+  box-shadow: var(--liquify-shadow);
+  border-radius: 20px;
+  margin-top: 10px;
+  margin-bottom: 10px;
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.RHKi_XpRWCqN6ta7KH69:hover {
+  transform: scale(1.03);
+}
+
+.BO7PHyCzLziWtONPjqy5 .ghNKVQBKy9QOG1tliXir.GX_NJQejPGKCSthdrXMr {
+  border-radius: 20px;
+}
+
+.sui3ec_WMaK0b1S8PPwz {
+  background-color: transparent;
+  box-shadow: var(--liquify-shadow);
+  border-radius: 20px;
+}
+
+.zOp0H9s6myIHE7tnkS5m {
+  background-color: transparent !important;
+  box-shadow: var(--liquify-shadow);
+  border-radius: 20px;
+  margin-top: 10px;
+  margin-bottom: 10px;
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.zOp0H9s6myIHE7tnkS5m:hover {
+  transform: scale(1.03);
+}
+
+.o9yX_DM53NuKTbquDhjO .rRh3T2ADQrfMkLLfkgBq.dDIwDEEbfTlYToGrDBRV {
+  border-radius: 20px;
+}
+
+.qx2q2w0DYin744m8sU7H {
+  background-color: transparent !important;
+  box-shadow: var(--liquify-shadow);
+  border-radius: 20px;
+  margin-top: 10px;
+  margin-bottom: 10px;
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.qx2q2w0DYin744m8sU7H:hover {
+  transform: scale(1.03);
+}
+
+.jGRA1DNjiCJ65xTLzlXE .oCrHfQvaQyOJy1FC6NTw {
+  border-radius: 20px;
+}
+
+.r3MRxhtDijiSmIPdwAxG {
+  box-shadow: var(--liquify-shadow);
+  border-radius: 20px;
+  padding: 15px;
+}
+
+.HGSb7AnVqCacuuDFDyNK {
+  background-color: transparent !important;
+  box-shadow: var(--liquify-shadow);
+  border-radius: 12px;
+  border-inline-end: none;
+}
+
+.P7WRlVuffrYIJ1gsNeAg {
+  border-radius: 8px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.uQSir8G5FOBgfzQvxuJv {
+  background-color: transparent;
+  box-shadow: var(--liquify-shadow);
+  border-radius: 20px;
+}
+
+.fQradYdTCa0eflx6wHcA,
+.IQyDdOw__uFYdPisVERA {
+  background-color: transparent;
+}
+
+.VlydBsO1MbgrQqu17co4 {
+  border: none;
+  box-shadow: var(--liquify-shadow);
+  border-radius: 20px;
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.VlydBsO1MbgrQqu17co4:hover {
+  transform: scale(1.03);
+}
+
+.RNKqAgBj79bkwuzknZJT {
+  border-radius: 20px;
+}
+
+.DFCpNlOoEM19yDQeGsE1 {
+  background-color: transparent;
+  box-shadow: var(--liquify-shadow);
+  border-radius: 20px;
+}
+
+.lKiVdfclpbW4ZuQjTIYn {
+  border-radius: 6px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.WyKcLOgQKDy1Lks7ryHU {
+  background-color: transparent;
+  box-shadow: var(--liquify-shadow);
+  border-radius: 20px;
+}
+
+.b2Yn_b_y4_oqj7M_5AP0 {
+  background-color: transparent !important;
+}
+
+.vyAIJoMJIJEJhYzb2Y2p {
+  border-radius: 20px !important;
+}
+
+.pK7Xdjf1GUBZLTBDFnlF {
+  background: transparent;
+  color: white;
+  border-radius: 10px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.OcDFhqN6NNtaADfTbGqG .UbqktcXNpZirVoJbbAEw {
+  border-radius: 12px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.UbqktcXNpZirVoJbbAEw {
+  background-color: transparent;
+}
+
+.IRBCU03g2h2HXePFst04 {
+  border-radius: 20px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.VvAoS6GSNFNNkXztQUOF {
+  background-color: transparent;
+  box-shadow: var(--liquify-shadow);
+  border-radius: 20px;
+}
+
+.uTZ4D7GtWViBjJnP9AM4 {
+  border-radius: 15px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.z3ClIDAqLjVFe0LtS58z {
+  border-radius: 20px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.fwWlS0GM8jvdGsEyZPoJ {
+  background-color: transparent;
+  border-radius: 12px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.ATbb5gAhIFSJKxLWkwRE {
+  background-color: transparent;
+}
+
+.noaTIqu8A6IyB7ABXzU8 {
+  height: 100%;
+}
+
+.RrsZOGIxRodS0Y3_I2PP:after {
+  background-image: none;
+}
+
+.Js8eeZY421_5B7PBMMbb {
+  background-color: transparent;
+  background-image: none;
+}
+
+.ROLsEKX5p0dPiFqXFaSS {
+  background-color: transparent;
+  outline: none;
+}
+
+.Gs2EwEu259e_Q_vcVyCx {
+  outline: none;
+  border-radius: 20px !important;
+}
+
+.QALRgHWzs5lWPR8XkphQ.FBjEQHz1G54L89cK6Rt4:before {
+  background-color: transparent;
+}
+
+.Gs2EwEu259e_Q_vcVyCx.fQmiHA0AxpagJx4dPiuu {
+  margin-bottom: calc(-88px - var(--bottom-bar-height) - var(--panel-gap));
+}
+
+.XCqiSTwcelpG5XSIAvQn {
+  background-color: transparent;
+}
+
+.DlttezW0eQdDtwNw6rDm {
+  background-image: none;
+}
+
+.K58qbggRbPdFapdYi_wj {
+  border-radius: 12px;
+}
+
+/* Cinema view cover: .uM9we… is the layer that clips the picture, so the radius
+   and the rim (in the ::after list at the top) both go there */
+.uM9we09EwoxEy6yzw8aD {
+  border-radius: 25px !important;
+}
+
+/* Spotify's mouse-follow 3D tilt and its glare overlay, switched off the same way
+   Spotify does for reduced motion (the tilt is an inline transform set by JS) */
+.KgyieS7hpRUjZvjbSy43 .uM9we09EwoxEy6yzw8aD {
+  transform: none !important;
+}
+
+.KgyieS7hpRUjZvjbSy43 .ui0aXu7Ofts6MZlCsGD8 {
+  display: none;
+}
+
+.ZCi2PpNd6KKLfd7MfukT {
+  border-radius: 20px;
+}
+
+.Omx0JsN5iM9OsHoy14g3 {
+  border-radius: 20px;
+}
+
+.N4V5QrPBAGb88mkdBK2V {
+  box-shadow: var(--liquify-shadow);
+  padding: 15px;
+  border-radius: 20px;
+}
+
+.yaIK2bcfkxsTh4zwfQmi .Js8eeZY421_5B7PBMMbb,
+.ehQNGwUdi4Iz3uVtCrmL .Js8eeZY421_5B7PBMMbb {
+  background-color: transparent;
+}
+
+.X8VwVPlDFxPubWkbfRZ2 {
+  background-color: transparent !important;
+  border-radius: 12px;
+  box-shadow: var(--liquify-shadow);
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.X8VwVPlDFxPubWkbfRZ2:hover {
+  transform: scale(1.05);
+}
+
+.gZCiOWRsqePYcK0SKYxZ:before {
+  background: none;
+}
+
+.qOdJkxIqInOIfSRA3LJL {
+  background-color: transparent;
+}
+
+.l13swGttKqvdBuv3oS6l .sVA57fPPVPMNO7STKL7s {
+  text-align: center;
+}
+
+.OsDLl_EbSaDJzGA6kqjL .GtL6v5f4OhSsTWIFTm5j {
+  text-align: center;
+}
+
+span.e-10860-overflow-wrap-anywhere.e-10860-button-primary__inner.encore-inverted-light-set.e-10860-legacy-button--small {
+  border-radius: 12px;
+  box-shadow: var(--liquify-shadow);
+}
+
+._card_16wgz_1 ._cardLinkWrapper_16wgz_239,
+._card_16wgz_1,
+._videoLayoutCard_16wgz_277:after {
+  border-radius: 20px;
+}
+
+/* ::after is taken by Spotify's hover gradient (opacity: 0) on video cards,
+   and the absolute image wrapper covers an inset shadow on the card itself */
+._card_16wgz_1::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  box-shadow: var(--liquify-shadow);
+  border-radius: inherit;
+}
+
+.EV8c1_8Z1GJmQiNzFeua {
+  background-color: transparent;
+}
+
+/* NPV header: Spotify's scroll-driven animation overrides box-shadow, so drop it */
+.tlJt8JO80alw0Nlw6iW9 {
+  animation: none;
+  inset-inline: 16px;
+  margin-top: 15px;
+  border-radius: 20px;
+  box-shadow: var(--liquify-shadow);
+}
+
+/* 48px header space + 30px for the header's margin */
+.AfKmrZ306qeQTbYQfwLc {
+  margin-top: 78px;
+}
+
+/* the canvas pulls itself up by header space + padding (-64px); keep it flush with the panel top */
+.dqJFUEMpr3OgDWpVX6TH {
+  margin-top: -94px;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 1) 80%, rgba(0, 0, 0, 0) 100%);
+  mask-repeat: no-repeat;
+  mask-size: 100% 100%;
+}
+
+/* NPV header buttons ("Mehr", expand) have no own classes */
+.JdAAwnN3eNoC0g1UtHgW {
+  gap: 8px;
+}
+
+.JdAAwnN3eNoC0g1UtHgW>button {
+  border-radius: 12px;
+  box-shadow: var(--liquify-shadow);
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.JdAAwnN3eNoC0g1UtHgW>button:hover {
+  transform: scale(1.05);
+}
+
+.w_63eGohnNUi98P84l_b {
+  background-color: transparent;
+  box-shadow: var(--liquify-shadow);
+  border-radius: 20px;
+}
+
+.cPCPoUfABWzF8MgTHeZv {
+  box-shadow: var(--liquify-shadow);
+  border-radius: 20px;
+  padding: 15px;
+}
+
+.BGdcsJhkf4JOCIGu5one {
+  border-radius: 20px;
+}
+
+.e-10860-legacy-box.e-10860-legacy-box--naked.e-10860-legacy-box--interactive.e-10860-legacy-box--padding-custom.e-10860-legacy-box--padding-block-start-custom.e-10860-legacy-box--padding-block-end-custom.e-10860-legacy-box--hover-custom.e-10860-legacy-box--active-custom.e-10860-legacy-box--min-size.e-10860-legacy-list-row.e-10860-legacy-list-row--has-leading.xVqnd9Ayf9IV3z82Vo9d.rroArLoQeAqlDAGnJ83r {
+  border-radius: 20px;
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1), box-shadow 0.28s ease !important;
+}
+
+.e-10860-legacy-box.e-10860-legacy-box--naked.e-10860-legacy-box--interactive.e-10860-legacy-box--padding-custom.e-10860-legacy-box--padding-block-start-custom.e-10860-legacy-box--padding-block-end-custom.e-10860-legacy-box--hover-custom.e-10860-legacy-box--active-custom.e-10860-legacy-box--min-size.e-10860-legacy-list-row.e-10860-legacy-list-row--has-leading.xVqnd9Ayf9IV3z82Vo9d.rroArLoQeAqlDAGnJ83r:hover {
+  transform: scale(1.03);
+  box-shadow: var(--liquify-shadow);
+}
+
+.tuGNp5P8DH75EOX0x0sU {
+  border-radius: 12px;
+}
+
+.e-10860-button--tertiary {
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.e-10860-button--tertiary:hover {
+  background-color: transparent !important;
+  transform: scale(1.05);
+}
+
+.H6u2D0Xqnkd1Ah9YxzYi:focus,
+.H6u2D0Xqnkd1Ah9YxzYi:focus {
+  background-color: transparent;
+}
+
+.QRx1Ql5P52OVNeLG5zjY {
+  border-radius: 12px;
+  box-shadow: var(--liquify-shadow);
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.QRx1Ql5P52OVNeLG5zjY:hover {
+  transform: scale(1.05);
+}
+
+.suqvnFaPhz7I0S4ZaIqe {
+  background-color: transparent;
+  border-radius: 20px;
+}
+
+.L5oPevXEAY1GuRJ9a1_j {
+  border-radius: 20px;
+  box-shadow: var(--liquify-shadow);
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+
+.L5oPevXEAY1GuRJ9a1_j:hover {
+  transform: scale(1.03);
+}
+
+._image-container_1ysjf_7 {
+  border-radius: 20px;
+}
+
+span.e-10860-overflow-wrap-anywhere.e-10860-button-primary__inner.e-10860-legacy-button--small {
+  border-radius: 12px;
+  box-shadow: var(--liquify-shadow);
+}
+
+button.encore-text-body-small-bold.e-10860-legacy-button-primary.e-10860-legacy-button {
+  transform: none !important;
+}
+
+.kxgYz600HIfARdZ0Joa7 {
+  background-color: transparent;
+}
+
+.UbzV6GmaFXRSbQNfaAZL.gmb9NAvXgkg8XFMlNTNR.PlM17FTnYyoT8BzLzLfF {
+  background-color: transparent;
+}
+
+.kwE7lFQb0qIeYSCYXYhA {
+  border-radius: 6px;
+}
+
+.nbM0yRQe7rKya_FNziMg {
+  border-radius: 12px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.i6cSWVvYHhVzx_xrAUQa {
+  background-color: transparent;
+  border-radius: 20px;
+}
+
+.i6cSWVvYHhVzx_xrAUQa .HXIRH5NT_lLuTYIW00x6 {
+  border-radius: 20px;
+}
+
+.e-10860-tab-list.e-10860-tab-list--content-align {
+  overflow: visible;
+}
+
+.ZXbCSxeqhRFKY9tjH_Kd {
+  border-radius: 20px;
+  border: none;
+  box-shadow: var(--liquify-shadow);
+}
+
+.J11WGNd9DCUb60Rvdc2A {
+  top: 78px;
+  border-radius: 20px;
+  border: none;
+  box-shadow: var(--liquify-shadow);
+  width: 100%;
+  margin: auto;
+  background-color: transparent !important;
+}
+
+.LUexW05KC3sE9DCISfuc video {
+  border-radius: 20px;
+}
+
+.m4UkLABVUgR32QM18cRc {
+  border-radius: 12px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.XzkBD72pfm2R6YsB2_6W {
+  background-color: transparent;
+}
+
+.cLAKaWUa6gs9SiMNh8Si {
+  border-radius: 20px;
+}
+
+.dqJFUEMpr3OgDWpVX6TH {
+  border-radius: 0px;
+}
+
+.un3PUeMx_xrIybGTBlt_ {
+  background-image: none;
+  background-color: transparent !important;
+  border: none;
+  border-radius: 20px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.ou4xeY8Imi8hxJLjtiEj {
+  background-color: transparent;
+  backdrop-filter: blur(1rem);
+}
+
+.EULA3xvVHwJGmhHsxgyj {
+  border-radius: 20px;
+}
+
+.HxhKHfLywCVFuBmQ7PnD:after,
+.iRsmnYSjUIOLy9t6CVHM {
+  border-radius: 20px;
+}
+
+img.ffzOCdGW6NQB2YMPie1D.hOb51AjYVXO1AAV66sBm.HRn_T9hOKPzrRL2LFvr0 {
+  border-radius: 20px !important;
+}
+
+.mSShW4Qls8GPp4ovLP1u {
+  border-radius: 15px;
+}
+
+.mVZJV4xlAOXCj8V9D8wH {
+  background-color: transparent;
+}
+
+.oA2xvck_WSZn6mRFcZ2J {
+  background-color: transparent;
+  backdrop-filter: blur(2rem);
+}
+
+.e-10860-legacy-box--elevated {
+  background-color: transparent;
+  border-radius: 15px;
+  box-shadow: var(--liquify-shadow);
+}
+
+span.e-10860-text.encore-text-body-medium.encore-internal-color-text-base {
+  color: white;
+}
+
+._tooltip-animation_igq95_1 {
+  background-color: transparent;
+  border-radius: 12px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.lWpOlKmFJB1FKmwsccav {
+  background-color: transparent;
+  border-radius: 12px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.pLvcoSIbNF28FKD_iw0A:before {
+  background: none;
+}
+
+.pLvcoSIbNF28FKD_iw0A:after {
+  background: none;
+}
+
+.K9ieiIt8DctSkGraEZrq {
+  border-radius: 15px;
+  box-shadow: var(--liquify-shadow);
+}
+
+.ViRU4WGs4wlDqn0wUPay.S8Wj_uo0U_XSA5PyKQpD {
+  border-radius: 20px;
+}
+
+.Yfd3sCOSw_wfDQdq5eSy {
+  border-radius: 12px;
+}
+
+.YpbkD1KYiSUHMMIc3FEe,
+.kfrC7VggzHlLjrTehQdA {
+  background-color: transparent;
+  border-radius: 20px;
+  box-shadow: var(--liquify-shadow);
+}
+
+h2.e-10860-text.encore-text-title-small.encore-internal-color-text-base,
+p.e-10860-text.encore-text-body-small.encore-internal-color-text-base,
+button.encore-text-body-small-bold.e-10860-legacy-button--small.e-10860-legacy-button-secondary--text-base.encore-internal-color-text-base.e-10860-legacy-button.e-10860-legacy-button-secondary.e-10860-overflow-wrap-anywhere.GBlrJECamSgK15esE6Mf {
+  color: white;
+}
+
 /* ════════════════════════════════════════════════════════════════════
    Material base – transparency removed (shapes preserved)
    --------------------------------------------------------------------
-   This section only removes the glass transparency. Every radius, margin,
+   This section removes the glass transparency. Every radius, margin,
    animation and hover effect from the original theme above stays intact.
    All surfaces become solid tonal fills; backdrop refraction is disabled
    app-wide (the GlassSurface classes injected by theme.js become no-ops).
@@ -2519,7 +4410,7 @@ body,
   display: none !important;
 }
 
-/* ── Solid surfaces for every glass target (same radii as before) ── */
+/* ── Solid surfaces for every glass target (both legacy and new Spotify) ── */
 
 .main-topBar-background,
 .zddkQq3wlxEOg6aa,
@@ -2530,6 +4421,7 @@ body,
 .NJh1B8rnlSUlK7sY,
 .search-searchCategory-carouselButton,
 .e-10451-box--tinted,
+.e-10860-box--tinted,
 .main-entityHeader-container,
 .main-actionBar-ActionBar,
 .main-nowPlayingView-headerWrapper,
@@ -2579,6 +4471,7 @@ dialog,
 .vado7sbDrEsKhSmn,
 .main-embedWidgetGenerator-container,
 .e-10451-box--elevated,
+.e-10860-legacy-box--elevated,
 .Wzl40f9FIUD91O2o,
 .mcZzjuAJUvE9X4gX,
 .Htdd9HRV28F07Dwl,
@@ -2646,6 +4539,7 @@ dialog {
 .main-trackList-trackListRow:hover,
 .main-nowPlayingView-artistOnTourItem:hover,
 .e-10451-box--interactive:hover,
+.e-10860-legacy-box--interactive:hover,
 .main-contextMenu-menuItemButton:hover {
   background-color: color-mix(in srgb, var(--spice-highlight, #3e3e3e) 55%, transparent) !important;
 }
@@ -2655,8 +4549,11 @@ dialog {
 /* Text on accent-filled buttons uses the JS-computed on-accent color,
    so a white/black sampled accent never produces unreadable text. */
 .e-10451-legacy-button-primary,
+.e-10860-legacy-button-primary,
 .e-10451-button-primary,
+.e-10860-button-primary,
 button.e-10451-legacy-button-primary,
+button.e-10860-legacy-button-primary,
 .main-playButton-PlayButton button,
 button[data-testid="play-button"],
 .encore-bright-accent-set {
@@ -2665,6 +4562,7 @@ button[data-testid="play-button"],
 
 /* Secondary accent surfaces (chips, toggles, highlights) */
 .e-10451-legacy-chip__inner--selected,
+.e-10860-legacy-chip__inner--selected,
 .main-actionBar-ActionBar button[data-testid="action-bar-row"] > button,
 .main-trackList-trackListRow[aria-selected="true"] {
   background-color: var(--accent-color, #1ed760) !important;
@@ -2677,8 +4575,10 @@ button[data-testid="play-button"],
 .main-playButton-PlayButton button:hover,
 button[data-testid="play-button"]:hover,
 .e-10451-legacy-button-primary:hover,
-.e-10451-button-primary:hover {
-  background-color: transparent !important;
+.e-10860-legacy-button-primary:hover,
+.e-10451-button-primary:hover,
+.e-10860-button-primary:hover {
+  background-color: var(--accent-color-secondary, var(--spice-highlight, #45475a)) !important;
   color: var(--liquify-on-accent, #000) !important;
 }
 
@@ -2695,7 +4595,7 @@ button[data-testid="play-button"]:hover,
 /* Progress / volume bars keep the accent; the thumb stays visible */
 .Root__now-playing-bar .progress-bar .progress-bar__slider,
 .Root__now-playing-bar .volume-bar .progress-bar__slider {
-  background-color: var(--accent-color, #1ed760) !important;
+  background-color: var(--accent-color, #cba6f7) !important;
 }
 
 /* Placeholder text is unreadable on light covers otherwise */
@@ -2721,10 +4621,10 @@ button[data-testid="play-button"]:hover,
 /* ── Right Now Playing header ─────────────────────────────────────── */
 
 .main-nowPlayingView-headerWrapper.liquify-npv-header-at-top {
-  background: rgba(255, 255, 255, 0.08) !important;
-  backdrop-filter: blur(18px) saturate(1.25) !important;
-  -webkit-backdrop-filter: blur(18px) saturate(1.25) !important;
-  transition: background-color 0.2s ease, backdrop-filter 0.2s ease;
+  background: var(--liquify-surface-1, #181825) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  transition: background-color 0.2s ease;
 }
 
 .main-nowPlayingView-headerWrapper.liquify-npv-header-scrolled {
@@ -2754,25 +4654,6 @@ button[data-testid="play-button"]:hover,
   overscroll-behavior: contain;
   scroll-padding-block: 24px;
 }
-
-/*.liquify-lyrics-sync-button,
-.liquify-lyrics-sync-button:hover,
-.liquify-lyrics-sync-button:focus-visible,
-.liquify-lyrics-sync-button:active {
-  transform: none !important;
-  box-shadow: none !important;
-}
-
-.liquify-lyrics-sync-button {
-  background: var(--accent-color-secondary, var(--spice-card, #313244)) !important;
-  color: var(--liquify-on-accent, var(--spice-text, #CDD6F4)) !important;
-}*/
-
-/*.liquify-lyrics-sync-button svg,
-.liquify-lyrics-sync-button * {
-  color: inherit !important;
-  fill: currentColor;
-}*/
 
 /* ── Artist selection and banner image fitting ───────────────────── */
 
@@ -2823,21 +4704,12 @@ button[data-testid="play-button"]:hover,
 
 /* Prevent the generic legacy-button hover animation from affecting lyrics. */
 .lyrics-lyrics-background .e-10451-legacy-button:hover,
-.lyrics-lyrics-contentContainer .e-10451-legacy-button:hover {
+.lyrics-lyrics-background .e-10860-legacy-button:hover,
+.lyrics-lyrics-contentContainer .e-10451-legacy-button:hover,
+.lyrics-lyrics-contentContainer .e-10860-legacy-button:hover {
   transform: none !important;
   box-shadow: none !important;
 }
-
-/*.lyrics-lyrics-background :has(.liquify-lyrics-sync-button):hover,
-.lyrics-lyrics-background :has(.liquify-lyrics-sync-button):hover::before,
-.lyrics-lyrics-background :has(.liquify-lyrics-sync-button):hover::after,
-.lyrics-lyrics-contentContainer :has(.liquify-lyrics-sync-button):hover,
-.lyrics-lyrics-contentContainer :has(.liquify-lyrics-sync-button):hover::before,
-.lyrics-lyrics-contentContainer :has(.liquify-lyrics-sync-button):hover::after {
-  background: transparent !important;
-  box-shadow: none !important;
-  transform: none !important;
-}*/
 
 /* Keep a visible gap between consecutive artist content blocks. */
 .artist-artistDiscography-headerContainer + .artist-artistDiscography-content,

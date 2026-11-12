@@ -1,74 +1,155 @@
-<h1 align="center"> ✨ Liquify Theme Spicetify ✨ </h1>
+<h1 align="center">
+  <img src="https://raw.githubusercontent.com/catppuccin/catppuccin/main/assets/misc/transparent.png" height="24" width="0" />
+  🪴 Catppuccinify for Spicetify 🪴
+</h1>
 
 <p align="center">
-  <b>A modern, rounded and liquified theme for spicetify</b><br>
+  <b>Soothing pastel theme for Spotify with official Catppuccin colorways</b><br>
+  Featuring <b>Mocha</b>, <b>Macchiato</b>, <b>Frappé</b>, and <b>Latte</b> with dynamic in-app flavor switching.<br>
+  <sub>Tested and verified for Spotify versions <b>1.3.6 – 1.3.8</b> (and 1.3.3+)</sub>
 </p>
 
-## Contents
+<p align="center">
+  <a href="LICENSE.txt">
+    <img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="License: AGPL-3.0" />
+  </a>
+  <img src="https://img.shields.io/badge/Flavors-Mocha%20|%20Macchiato%20|%20Frapp%C3%A9%20|%20Latte-cba6f7.svg" alt="Flavors" />
+</p>
 
-<!-- toc -->
+---
 
-- [Introduction](#introduction)
-- [Theme screenshots](#theme-screenshots)
-- [Features](#features)
-<!-- tocstop -->
+## 📸 Visual Previews
 
-## Introduction
+### 🎨 Flavor Showcase
+<p align="center">
+  <img src="assets/flavor-showcase.png" alt="Catppuccinify Flavor Showcase" width="100%" />
+</p>
 
-**Liquify** - is a glassmorphic Spicetify theme for Spotify featuring a modern, luminous interface and smooth animations.
+<details open>
+<summary><b>🔍 Click to view high-resolution previews of each flavor</b></summary>
+<br>
 
-Liquify is inspired by [Glassify](https://github.com/sanoojes/spicetify-glassify) from [Sanoojes](https://github.com/sanoojes).
+#### ☕ Mocha (Darkest / Default)
+> Rich dark aesthetic with velvety crust backgrounds and vibrant mauve accents.
 
-If your transparent controls don’t look fully transparent — for example when zooming in on Spotify — you can easily change the width and height of them in the Glowify Settings to make them fully transparent again.
+<p align="center">
+  <img src="assets/preview-mocha.png" alt="Catppuccinify Mocha Preview" width="95%" />
+</p>
 
-If you like the theme, consider starring the repository on GitHub! ⭐
+#### 🍫 Macchiato (Medium Dark)
+> Balanced, cozy dark theme suited for daytime and evening listening.
 
-**For support join the Discord!**:
+<p align="center">
+  <img src="assets/preview-macchiato.png" alt="Catppuccinify Macchiato Preview" width="95%" />
+</p>
 
-<a href="https://discord.gg/QRMnrgjhvq" target="_blank">
-  <img src="discord-icon.png" alt="Discord-server-link" width="64" />
-</a>
+#### 🍧 Frappé (Soft Dark / Low-Contrast)
+> Gentle low-contrast dark palette designed to reduce eye strain.
 
-## Theme screenshots
+<p align="center">
+  <img src="assets/preview-frappe.png" alt="Catppuccinify Frappe Preview" width="95%" />
+</p>
 
-<details>
-<summary>Click to watch screenshots</summary>
-<img width="1919" height="1029" alt="Homescreen" src="https://github.com/user-attachments/assets/a7d50e6e-56be-4a8b-8ea6-8835655d4cdf" />
+#### 🥛 Latte (Official Light Palette)
+> Crisp, clean light theme with deep lavender, sapphire, and crisp typography.
 
-<img width="1919" height="1029" alt="Playlist" src="https://github.com/user-attachments/assets/5375a463-10a4-428e-8e5c-f43d76e03509" />
-
-<img width="1919" height="1030" alt="Search" src="https://github.com/user-attachments/assets/71d1c7a5-bca6-47d3-880c-8c0e85c45bce" />
-
-<img width="1919" height="1030" alt="Artist-Page" src="https://github.com/user-attachments/assets/60151e06-8a6a-4548-a882-1c267c18e7ca" />
-
-<img width="1919" height="1028" alt="Artist-Page2" src="https://github.com/user-attachments/assets/fa9bdb4f-666e-4380-9ee3-2da6b33be730" />
-
-<img width="1919" height="1030" alt="Liquify-Settings" src="https://github.com/user-attachments/assets/0ab96146-4868-468c-8a22-7cb03fa992c1" />
-
-<img width="1919" height="1030" alt="Popup" src="https://github.com/user-attachments/assets/59b2f2e9-b273-4f2a-9d06-7e562be21f8d" />
-
-<img width="1919" height="1029" alt="Settings" src="https://github.com/user-attachments/assets/f37cfbef-7d3e-4ed4-bab5-0dfeae4362aa" />
-
-<img width="1919" height="1030" alt="Fullscreen" src="https://github.com/user-attachments/assets/7b147a4f-6f48-4123-bf65-96b4a94d44e0" />
+<p align="center">
+  <img src="assets/preview-latte.png" alt="Catppuccinify Latte Preview" width="95%" />
+</p>
 
 </details>
 
 ---
 
-## Features
+## ⚡ Fast One-Liner Installation
 
-**Liquify offers:**
+Install and apply **Catppuccinify** in a single command using `spicetify` CLI:
 
-- Many customization options
--  `Beatiful Lyrics`, `Spicy Lyrics` and `Lucid Lyrics` are supported by default
-- Beautiful dynamic colors (Just enable dynamic button colors in the settings and your good to go)
-- Modern, rounded UI
-- And much more!
+### 🐧 Linux & 🍎 macOS
+```bash
+curl -fsSL https://raw.githubusercontent.com/ddroid/catppuccinify/main/install.sh | bash
+```
 
-## Credits
+To install with a specific flavor (e.g. `latte`, `macchiato`, or `frappe`):
+```bash
+curl -fsSL https://raw.githubusercontent.com/ddroid/catppuccinify/main/install.sh | bash -s -- latte
+```
 
-Created by NMW.
+### 🪟 Windows (PowerShell)
+```powershell
+iwr -useb https://raw.githubusercontent.com/ddroid/catppuccinify/main/install.ps1 | iex
+```
 
-## License
+Or choose a specific flavor:
+```powershell
+& ([scriptblock]::Create((iwr -useb https://raw.githubusercontent.com/ddroid/catppuccinify/main/install.ps1))) -Flavor latte
+```
 
-This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0). See the LICENSE file for details.
+---
+
+## 🛠️ Manual Installation (Spicetify CLI)
+
+If you prefer to configure Spicetify manually:
+
+1. **Clone the repository** into your Spicetify Themes folder:
+   ```bash
+   # Linux & macOS
+   git clone --depth 1 https://github.com/ddroid/catppuccinify.git "$(dirname "$(spicetify -c)")/Themes/catppuccinify"
+
+   # Windows (PowerShell)
+   git clone --depth 1 https://github.com/ddroid/catppuccinify.git "$(Split-Path (spicetify -c))\Themes\catppuccinify"
+   ```
+
+2. **Select theme and flavor** (options: `mocha`, `macchiato`, `frappe`, `latte`):
+   ```bash
+   spicetify config current_theme catppuccinify color_scheme mocha
+   ```
+
+3. **Enable required injection flags and apply**:
+   ```bash
+   spicetify config inject_css 1 inject_theme_js 1 replace_colors 1 overwrite_assets 1
+   spicetify apply
+   ```
+
+---
+
+## 🎛️ Dynamic Flavor Switching
+
+Catppuccinify supports switching between flavors in two ways:
+
+### 1. In-App Dynamic Switching (No Terminal Required)
+1. Open Spotify.
+2. Click the **Catppuccinify Settings** gear icon in the top-right bar (or sidebar).
+3. Under **Color Scheme**, pick **Mocha**, **Macchiato**, **Frappé**, or **Latte**.
+4. The color palette and CSS variables update dynamically in real time and persist across reloads!
+
+### 2. Via Spicetify CLI
+```bash
+spicetify config color_scheme <mocha | macchiato | frappe | latte>
+spicetify apply
+```
+
+---
+
+## ✨ Features
+
+- **All 4 Official Catppuccin Palettes**: True-to-spec colors for Mocha, Macchiato, Frappé, and Latte.
+- **Dynamic Cover Art Sampling**: In dynamic accent mode, dominant album art colors are snapped to the perceptually nearest Catppuccin swatch with guaranteed text contrast.
+- **Modern Rounded Surfaces**: Polished rounded containers, pill tags, and sleek playbars.
+- **Lyrics & Extensions**: Built-in support for Liquid Lyrics (including onboarding setup), Beautiful Lyrics, Spicy Lyrics, and Lucid Lyrics.
+- **Spotify 1.3.6 – 1.3.8 Ready**: Upstream selector and layout compatibility patches for recent Spotify desktop client releases.
+- **Automated CI/CD**: Syntax and asset validation on every commit; automated tagged releases packaging `.zip` distributions.
+
+---
+
+## 🤝 Community & Support
+
+- Original UI design inspired by [Liquify](https://github.com/NMWplays/Liquify) by NMW and [Glassify](https://github.com/sanoojes/spicetify-glassify).
+- Catppuccin palette courtesy of the [Catppuccin](https://github.com/catppuccin/catppuccin) project.
+- For help or feature requests, open an [issue on GitHub](https://github.com/ddroid/catppuccinify/issues).
+
+---
+
+## 📜 License
+
+This project is licensed under the [GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE.txt).

@@ -1,0 +1,24 @@
+{
+  "name": "catppuccinify",
+  "version": "1.0.0",
+  "description": "Spicetify theme featuring all 4 official Catppuccin colorways (Mocha, Macchiato, Frappé, Latte)",
+  "scripts": {
+    "test": "node scripts/validate.js",
+    "validate": "node scripts/validate.js",
+    "package": "python3 scripts/package.py",
+    "merge-upstream": "python3 scripts/merge_theme.py && python3 scripts/merge_css.py"
+  },
+  "keywords": [
+    "spicetify",
+    "spicetify-theme",
+    "spotify",
+    "catppuccin",
+    "catppuccin-theme",
+    "mocha",
+    "macchiato",
+    "frappe",
+    "latte"
+  ],
+  "author": "Ahmad Munir",
+  "license": "AGPL-3.0"
+}

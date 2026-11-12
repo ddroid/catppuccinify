@@ -1,0 +1,32 @@
+{
+  "type": "theme",
+  "name": "Catppuccinify",
+  "description": "A modern, rounded Spicetify theme featuring all 4 official Catppuccin colorways (Mocha, Macchiato, Frappé, Latte).",
+  "branch": "main",
+  "preview": "preview.png",
+  "readme": "README.md",
+  "authors": [
+    {
+      "name": "Ahmad Munir",
+      "url": "https://github.com/ddroid"
+    },
+    {
+      "name": "NMWplays",
+      "url": "https://github.com/NMWplays"
+    }
+  ],
+  "tags": [
+    "catppuccin",
+    "dark",
+    "light",
+    "mocha",
+    "macchiato",
+    "frappe",
+    "latte",
+    "rounded"
+  ],
+  "spotify": "1.3.6 - 1.3.8",
+  "style": "user.css",
+  "main": "theme.js",
+  "windowControls": "custom"
+}

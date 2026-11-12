@@ -1,45 +1,33 @@
 [
   {
-    "name": "Liquify",
-    "description": "A modern, rounded and liquified theme for Spicetify.",
+    "name": "Catppuccinify",
+    "description": "A modern, rounded Spicetify theme featuring all 4 official Catppuccin colorways (Mocha, Macchiato, Frappé, Latte).",
     "preview": "preview.png",
     "readme": "README.md",
-    "usercss": "https://nmwplays.github.io/Liquify/user.css",
+    "usercss": "user.css",
     "schemes": "color.ini",
     "include": [
-      "https://nmwplays.github.io/Liquify/theme.js"
+      "theme.js"
     ],
     "authors": [
+      {
+        "name": "Ahmad Munir",
+        "url": "https://github.com/ddroid"
+      },
       {
         "name": "NMWplays",
         "url": "https://github.com/NMWplays"
       }
     ],
     "tags": [
+      "catppuccin",
       "dark",
-      "rounded",
-      "liquified"
-    ]
-  },
-  {
-    "name": "Liquify V1 (Legacy)",
-    "description": "The original Liquify theme. Legacy version, no longer maintained.",
-    "preview": "https://rawcdn.githack.com/NMWplays/Liquify/V1/preview.png",
-    "readme": "https://rawcdn.githack.com/NMWplays/Liquify/V1/README.md",
-    "usercss": "https://rawcdn.githack.com/NMWplays/Liquify/V1/user.css",
-    "schemes": "https://rawcdn.githack.com/NMWplays/Liquify/V1/color.ini",
-    "include": [
-      "https://rawcdn.githack.com/NMWplays/Liquify/V1/theme.js",
-      "https://rawcdn.githack.com/NMWplays/Liquify/V1/liquify-settings.js"
-    ],
-    "authors": [
-      {
-        "name": "NMWplays",
-        "url": "https://github.com/NMWplays"
-      }
-    ],
-    "tags": [
-      "legacy"
+      "light",
+      "mocha",
+      "macchiato",
+      "frappe",
+      "latte",
+      "rounded"
     ]
   }
 ]

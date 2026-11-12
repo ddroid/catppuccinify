@@ -2,29 +2,22 @@
 (() => {
   // src/glassSurface.ts
   var SVG_NS = "http://www.w3.org/2000/svg";
-  var DEFAULTS = {
-    borderRadius: 20,
-    borderWidth: 0.07,
-    brightness: 50,
-    opacity: 0.93,
-    blur: 2,
-    glassBlur: "",
-    backdropBlur: "",
-    displace: 0.2,
-    saturation: 1,
-    distortionScale: -80,
-    chromaticAberration: true,
-    redOffset: 0,
-    greenOffset: 6,
-    blueOffset: 10,
-    xChannel: "R",
-    yChannel: "G",
-    mixBlendMode: "screen",
-    applyTo: "element"
-  };
-  var instanceCounter = 0;
-  var filterDefs = null;
+  var XLINK_NS = "http://www.w3.org/1999/xlink";
+  var DEFAULT_LENS = { distortion: -80, chromatic: true };
+  var DEFAULT_FILTER_ID = "glass-filter--r1-7";
+  var FILTER_HOST_ID = "liquify-filter-host";
+  var STYLE_ID = "liquify-glass-style";
+  var PERF_CLASS = "liquify-perf-no-glass";
+  var GLASS_STORAGE_KEY = "liquify-glass-enabled";
+  var PLAIN_BACKDROP = "blur(var(--liquify-backdrop-blur, 2rem)) saturate(1.4)";
+  var BEFORE_LAYER = 'content:"";position:absolute;inset:0;border-radius:inherit;z-index:-1;pointer-events:none;';
+  var CHANNELS = [
+    { name: "red", offset: 0, matrix: "1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" },
+    { name: "green", offset: 6, matrix: "0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0" },
+    { name: "blue", offset: 10, matrix: "0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0" }
+  ];
   var svgFilterSupport = null;
+  var glassEnabled = readGlassEnabled();
   function supportsSVGFilters() {
     if (svgFilterSupport !== null) return svgFilterSupport;
     const ua = navigator.userAgent;
@@ -39,39 +32,12 @@
     }
     return svgFilterSupport;
   }
-  function ensureFilterDefs() {
-    if (filterDefs && filterDefs.isConnected) return filterDefs;
-    const host = document.createElementNS(SVG_NS, "svg");
-    host.setAttribute("id", "liquify-filter-host");
-    host.setAttribute("width", "0");
-    host.setAttribute("height", "0");
-    host.setAttribute("aria-hidden", "true");
-    filterDefs = document.createElementNS(SVG_NS, "defs");
-    host.appendChild(filterDefs);
-    document.body.appendChild(host);
-    return filterDefs;
-  }
-  var GLASS_STORAGE_KEY = "liquify-glass-enabled";
-  var SIMPLE_STYLE_ID = "liquify-glass-simple-style";
-  var BULK_FILTER_ID = "glass-filter--r1-7";
-  var BULK_FILTER_HOST_ID = "liquify-bulk-filter-host";
-  var BULK_STYLE_ID = "liquify-glass-bulk-style";
-  var PERF_CLASS = "liquify-perf-no-glass";
-  var instances = /* @__PURE__ */ new Set();
-  var glassEnabled = readGlassEnabled();
   function readGlassEnabled() {
     try {
       return localStorage.getItem(GLASS_STORAGE_KEY) !== "off";
     } catch {
       return true;
     }
-  }
-  function ensureSimpleStyle() {
-    if (document.getElementById(SIMPLE_STYLE_ID)) return;
-    const style = document.createElement("style");
-    style.id = SIMPLE_STYLE_ID;
-    style.textContent = ".liquify-glass--simple{background:transparent;backdrop-filter:blur(var(--liquify-backdrop-blur, 2rem)) saturate(1.4);-webkit-backdrop-filter:blur(var(--liquify-backdrop-blur, 2rem)) saturate(1.4);}";
-    document.head.appendChild(style);
   }
   function isGlassEnabled() {
     return glassEnabled;
@@ -82,95 +48,12 @@
       localStorage.setItem(GLASS_STORAGE_KEY, enabled ? "on" : "off");
     } catch {
     }
-    for (const instance of instances) instance.refreshMode();
-    document.documentElement.classList.toggle(PERF_CLASS, !enabled);
+    syncPerfClass();
   }
-  function bulkDisplacementMap() {
-    const w2 = 400;
-    const h2 = 200;
-    const r = 20;
-    const edge = Math.min(w2, h2) * (0.07 * 0.5);
-    const svg = `<svg viewBox="0 0 ${w2} ${h2}" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="lqbulk-rg" x1="100%" y1="0%" x2="0%" y2="0%"><stop offset="0%" stop-color="#0000"/><stop offset="100%" stop-color="red"/></linearGradient><linearGradient id="lqbulk-bg" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#0000"/><stop offset="100%" stop-color="blue"/></linearGradient></defs><rect x="0" y="0" width="${w2}" height="${h2}" fill="black"></rect><rect x="0" y="0" width="${w2}" height="${h2}" rx="${r}" fill="url(#lqbulk-rg)" /><rect x="0" y="0" width="${w2}" height="${h2}" rx="${r}" fill="url(#lqbulk-bg)" style="mix-blend-mode: screen" /><rect x="${edge}" y="${edge}" width="${w2 - edge * 2}" height="${h2 - edge * 2}" rx="${r}" fill="hsl(0 0% 50% / 0.93)" style="filter:blur(2px)" /></svg>`;
-    return `data:image/svg+xml,${encodeURIComponent(svg)}`;
-  }
-  function ensureSharedGlassFilter() {
-    if (!supportsSVGFilters()) return;
-    if (document.getElementById(BULK_FILTER_HOST_ID)) return;
-    const fe = (name, attrs) => {
-      const node = document.createElementNS(SVG_NS, name);
-      for (const [k, v2] of Object.entries(attrs)) node.setAttribute(k, v2);
-      return node;
-    };
-    const host = document.createElementNS(SVG_NS, "svg");
-    host.setAttribute("id", BULK_FILTER_HOST_ID);
-    host.setAttribute("width", "0");
-    host.setAttribute("height", "0");
-    host.setAttribute("aria-hidden", "true");
-    const defs = document.createElementNS(SVG_NS, "defs");
-    const filter = fe("filter", {
-      id: BULK_FILTER_ID,
-      "color-interpolation-filters": "sRGB",
-      x: "0%",
-      y: "0%",
-      width: "100%",
-      height: "100%"
-    });
-    const feImage = fe("feImage", { x: "0", y: "0", width: "100%", height: "100%", preserveAspectRatio: "none", result: "map" });
-    const map = bulkDisplacementMap();
-    feImage.setAttribute("href", map);
-    feImage.setAttributeNS("http://www.w3.org/1999/xlink", "xlink:href", map);
-    filter.appendChild(feImage);
-    const distortionScale = -80;
-    const channels = [
-      { name: "Red", offset: 0, matrix: "1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" },
-      { name: "Green", offset: 6, matrix: "0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0" },
-      { name: "Blue", offset: 10, matrix: "0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0" }
-    ];
-    for (const c2 of channels) {
-      filter.appendChild(fe("feDisplacementMap", { in: "SourceGraphic", in2: "map", scale: String(distortionScale + c2.offset), xChannelSelector: "R", yChannelSelector: "G", result: `disp${c2.name}` }));
-      filter.appendChild(fe("feColorMatrix", { in: `disp${c2.name}`, type: "matrix", values: c2.matrix, result: c2.name.toLowerCase() }));
-    }
-    filter.appendChild(fe("feBlend", { in: "red", in2: "green", mode: "screen", result: "rg" }));
-    filter.appendChild(fe("feBlend", { in: "rg", in2: "blue", mode: "screen", result: "output" }));
-    filter.appendChild(fe("feGaussianBlur", { in: "output", stdDeviation: "0.2" }));
-    defs.appendChild(filter);
-    host.appendChild(defs);
-    document.body.appendChild(host);
-  }
-  function applyBulkGlass(targets) {
-    ensureSharedGlassFilter();
-    const defaultSelectors = [];
-    const extraRules = [];
-    const allSelectors = [];
-    for (const t of targets) {
-      if (t.before) {
-        const b2 = t.blur != null ? `${t.blur}px` : "var(--liquify-glass-blur, 2px)";
-        extraRules.push(
-          `${t.selector}::before{content:"";position:absolute;inset:0;border-radius:inherit;z-index:-1;pointer-events:none;backdrop-filter:var(--glass-filter) blur(${b2});-webkit-backdrop-filter:var(--glass-filter) blur(${b2});}`
-        );
-      } else if (t.blur != null) {
-        extraRules.push(
-          `${t.selector}{backdrop-filter:var(--glass-filter) blur(${t.blur}px);-webkit-backdrop-filter:var(--glass-filter) blur(${t.blur}px);}`
-        );
-        allSelectors.push(t.selector);
-      } else {
-        defaultSelectors.push(t.selector);
-        allSelectors.push(t.selector);
-      }
-    }
-    const perfBlur = "blur(var(--liquify-backdrop-blur, 2rem)) saturate(1.4)";
-    const css = `:root{--glass-filter:url(#${BULK_FILTER_ID});}` + (defaultSelectors.length ? `${defaultSelectors.join(",")}{backdrop-filter:var(--glass-filter) blur(var(--liquify-glass-blur, 2px));-webkit-backdrop-filter:var(--glass-filter) blur(var(--liquify-glass-blur, 2px));}` : "") + extraRules.join("") + (allSelectors.length ? `html.${PERF_CLASS} :is(${allSelectors.join(",")}){backdrop-filter:${perfBlur};-webkit-backdrop-filter:${perfBlur};}` : "");
-    let style = document.getElementById(BULK_STYLE_ID);
-    if (!style) {
-      style = document.createElement("style");
-      style.id = BULK_STYLE_ID;
-      document.head.appendChild(style);
-    }
-    style.textContent = css;
-    document.documentElement.classList.toggle(PERF_CLASS, !glassEnabled);
+  function syncPerfClass() {
+    document.documentElement.classList.toggle(PERF_CLASS, !glassEnabled || !supportsSVGFilters());
   }
   function installGlassDevtools() {
-    ensureSimpleStyle();
     window.liquifyGlass = {
       enable: () => setGlassEnabled(true),
       disable: () => setGlassEnabled(false),
@@ -180,277 +63,1341 @@
       }
     };
   }
-  var GlassSurface = class {
-    constructor(el, options = {}) {
-      this.filter = null;
-      this.feImage = null;
-      this.resizeObserver = null;
-      this.attrObserver = null;
-      this.styleEl = null;
-      this.destroyed = false;
-      this.lastSize = { width: 0, height: 0 };
-      this.syncScheduled = false;
-      this.scheduleSync = () => {
-        if (this.syncScheduled || this.destroyed) return;
-        this.syncScheduled = true;
-        requestAnimationFrame(() => {
-          this.syncScheduled = false;
-          this.updateDisplacementMap();
-        });
+  function applyGlass(targets) {
+    const lenses = /* @__PURE__ */ new Map([[DEFAULT_FILTER_ID, DEFAULT_LENS]]);
+    const groups = /* @__PURE__ */ new Map();
+    for (const target of targets) {
+      const selector = target.selector.includes(",") ? `:is(${target.selector})` : target.selector;
+      const before = target.before === true;
+      if (!isValidSelector(selector) || before && selector.includes("::")) {
+        console.warn(`[Liquify] Skipping invalid glass selector: ${target.selector}`);
+        continue;
+      }
+      const lens = {
+        distortion: target.distortion ?? DEFAULT_LENS.distortion,
+        chromatic: target.chromatic ?? DEFAULT_LENS.chromatic
       };
-      this.el = el;
-      this.opts = { ...DEFAULTS, ...options };
-      this.filterId = `liquify-filter-${++instanceCounter}`;
-      instances.add(this);
-      if (supportsSVGFilters()) {
-        this.buildFilter();
-        this.applyStyles();
-        this.updateDisplacementMap();
-        this.resizeObserver = new ResizeObserver(this.scheduleSync);
-        this.resizeObserver.observe(el);
-      } else {
-        this.applyStyles();
+      const filterId = lensFilterId(lens);
+      lenses.set(filterId, lens);
+      const bright = target.brightness != null ? ` brightness(${target.brightness})` : "";
+      const blur = target.blur != null ? `${target.blur}px` : "var(--liquify-glass-blur, 2px)";
+      const glass = `url(#${filterId}) blur(${blur})${bright}`;
+      const key = `${before}|${glass}`;
+      let group = groups.get(key);
+      if (!group) {
+        group = { before, glass, plain: PLAIN_BACKDROP + bright, selectors: [] };
+        groups.set(key, group);
       }
-      this.attrObserver = new MutationObserver(() => this.ensureApplied());
-      this.attrObserver.observe(el, { attributes: true, attributeFilter: ["class", "style"] });
+      group.selectors.push(before ? `${selector}::before` : selector);
     }
-    /**
-     * Re-applies class and marker attribute in case Spotify wiped them.
-     * Called on every mutation batch, so it must stay cheap: no layout reads —
-     * geometry changes are the ResizeObserver's job.
-     */
-    ensureApplied() {
-      if (this.destroyed) return;
-      if (!this.el.classList.contains("liquify-glass") || this.el.getAttribute("data-liquify") !== this.filterId) {
-        this.applyStyles();
-      }
+    let glassCss = "";
+    let perfCss = "";
+    for (const group of groups.values()) {
+      const layer = group.before ? BEFORE_LAYER : "";
+      glassCss += `${group.selectors.join(",")}{${layer}backdrop-filter:${group.glass};}`;
+      perfCss += `${group.selectors.map((s2) => `html.${PERF_CLASS} ${s2}`).join(",")}{backdrop-filter:${group.plain};}`;
     }
-    destroy() {
-      if (this.destroyed) return;
-      this.destroyed = true;
-      instances.delete(this);
-      this.resizeObserver?.disconnect();
-      this.resizeObserver = null;
-      this.attrObserver?.disconnect();
-      this.attrObserver = null;
-      this.filter?.remove();
-      this.filter = null;
-      this.feImage = null;
-      this.styleEl?.remove();
-      this.styleEl = null;
-      this.el.classList.remove("liquify-glass", "liquify-glass--svg", "liquify-glass--simple", "liquify-glass--before");
-      this.el.removeAttribute("data-liquify");
+    if (supportsSVGFilters()) buildFilterHost(lenses);
+    let style = document.getElementById(STYLE_ID);
+    if (!style) {
+      style = document.createElement("style");
+      style.id = STYLE_ID;
+      document.head.appendChild(style);
     }
-    /** Re-applies the current on/off mode (called by the DevTools toggle). */
-    refreshMode() {
-      if (this.destroyed) return;
-      this.applyStyles();
+    style.textContent = glassCss + perfCss;
+    syncPerfClass();
+  }
+  var selectorProbe = document.createDocumentFragment();
+  function isValidSelector(selector) {
+    try {
+      selectorProbe.querySelector(selector);
+      return true;
+    } catch {
+      return false;
     }
-    applyStyles() {
-      const useSvg = glassEnabled && supportsSVGFilters();
-      this.el.classList.add("liquify-glass");
-      this.el.classList.toggle("liquify-glass--svg", useSvg);
-      this.el.classList.toggle("liquify-glass--simple", !useSvg);
-      this.el.classList.toggle("liquify-glass--before", this.opts.applyTo === "before");
-      this.el.setAttribute("data-liquify", this.filterId);
-      this.ensureInstanceStyle();
+  }
+  function lensFilterId(lens) {
+    if (lens.distortion === DEFAULT_LENS.distortion && lens.chromatic === DEFAULT_LENS.chromatic) {
+      return DEFAULT_FILTER_ID;
     }
-    /**
-     * Element-static custom properties in an own stylesheet rule (Spotify rewrites
-     * the inline style attribute, which would wipe them). Holds this element's
-     * displacement filter and any per-element blur overrides — none of which
-     * depend on the on/off mode, so the rule is built once.
-     *
-     * A per-element blur is written as `var(--…-special, <value>)` so theme
-     * settings can override every special element at once via that variable,
-     * while unset elements keep their own value.
-     */
-    ensureInstanceStyle() {
-      if (this.styleEl) return;
-      const decls = [];
-      if (supportsSVGFilters()) {
-        const saturate = this.opts.saturation !== 1 ? ` saturate(${this.opts.saturation})` : "";
-        decls.push(`--liquify-filter:url(#${this.filterId})${saturate}`);
-      }
-      if (this.opts.glassBlur) {
-        decls.push(`--liquify-glass-blur:${this.opts.glassBlur}`);
-      }
-      if (this.opts.backdropBlur) {
-        decls.push(`--liquify-backdrop-blur:var(--liquify-backdrop-blur-special, ${this.opts.backdropBlur})`);
-      }
-      if (decls.length === 0) return;
-      this.styleEl = document.createElement("style");
-      this.styleEl.textContent = `[data-liquify="${this.filterId}"]{${decls.join(";")};}`;
-      document.head.appendChild(this.styleEl);
-    }
-    /** Builds the SVG filter chain (per-channel displacement + screen blend). */
-    buildFilter() {
-      const fe = (name, attrs) => {
-        const node = document.createElementNS(SVG_NS, name);
-        for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
-        return node;
-      };
-      const o = this.opts;
-      const filter = fe("filter", {
-        id: this.filterId,
-        "color-interpolation-filters": "sRGB",
-        x: "0%",
-        y: "0%",
-        width: "100%",
-        height: "100%"
-      });
-      this.feImage = fe("feImage", {
-        x: "0",
-        y: "0",
-        width: "100%",
-        height: "100%",
-        preserveAspectRatio: "none",
-        result: "map"
-      });
-      filter.appendChild(this.feImage);
-      if (o.chromaticAberration) {
-        const channels = [
-          {
-            name: "Red",
-            offset: o.redOffset,
-            matrix: "1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"
-          },
-          {
-            name: "Green",
-            offset: o.greenOffset,
-            matrix: "0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0"
-          },
-          {
-            name: "Blue",
-            offset: o.blueOffset,
-            matrix: "0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0"
-          }
-        ];
-        for (const channel of channels) {
-          filter.appendChild(
-            fe("feDisplacementMap", {
-              in: "SourceGraphic",
-              in2: "map",
-              scale: String(o.distortionScale + channel.offset),
-              xChannelSelector: o.xChannel,
-              yChannelSelector: o.yChannel,
-              result: `disp${channel.name}`
-            })
-          );
-          filter.appendChild(
-            fe("feColorMatrix", {
-              in: `disp${channel.name}`,
-              type: "matrix",
-              values: channel.matrix,
-              result: channel.name.toLowerCase()
-            })
-          );
-        }
-        filter.appendChild(fe("feBlend", { in: "red", in2: "green", mode: "screen", result: "rg" }));
-        filter.appendChild(fe("feBlend", { in: "rg", in2: "blue", mode: "screen", result: "output" }));
-      } else {
+    return `liquify-lens${lens.distortion}${lens.chromatic ? "" : "-mono"}`.replace(/[^\w-]/g, "_");
+  }
+  function svgElement(name, attrs) {
+    const node = document.createElementNS(SVG_NS, name);
+    for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+    return node;
+  }
+  function buildFilterHost(lenses) {
+    document.getElementById(FILTER_HOST_ID)?.remove();
+    const host = svgElement("svg", { id: FILTER_HOST_ID, width: "0", height: "0", "aria-hidden": "true" });
+    const defs = svgElement("defs", {});
+    const map = displacementMap();
+    for (const [id, lens] of lenses) defs.appendChild(buildFilter(id, lens, map));
+    host.appendChild(defs);
+    document.body.appendChild(host);
+  }
+  function buildFilter(id, lens, map) {
+    const filter = svgElement("filter", {
+      id,
+      "color-interpolation-filters": "sRGB",
+      x: "0%",
+      y: "0%",
+      width: "100%",
+      height: "100%"
+    });
+    const image = svgElement("feImage", {
+      x: "0",
+      y: "0",
+      width: "100%",
+      height: "100%",
+      preserveAspectRatio: "none",
+      result: "map",
+      href: map
+    });
+    image.setAttributeNS(XLINK_NS, "xlink:href", map);
+    filter.appendChild(image);
+    const displace = (scale, result) => svgElement("feDisplacementMap", {
+      in: "SourceGraphic",
+      in2: "map",
+      scale: String(scale),
+      xChannelSelector: "R",
+      yChannelSelector: "G",
+      result
+    });
+    if (lens.chromatic) {
+      for (const channel of CHANNELS) {
+        filter.appendChild(displace(lens.distortion + channel.offset, `disp-${channel.name}`));
         filter.appendChild(
-          fe("feDisplacementMap", {
-            in: "SourceGraphic",
-            in2: "map",
-            scale: String(o.distortionScale),
-            xChannelSelector: o.xChannel,
-            yChannelSelector: o.yChannel,
-            result: "output"
+          svgElement("feColorMatrix", {
+            in: `disp-${channel.name}`,
+            type: "matrix",
+            values: channel.matrix,
+            result: channel.name
           })
         );
       }
-      filter.appendChild(fe("feGaussianBlur", { in: "output", stdDeviation: String(o.displace) }));
-      ensureFilterDefs().appendChild(filter);
-      this.filter = filter;
+      filter.appendChild(svgElement("feBlend", { in: "red", in2: "green", mode: "screen", result: "rg" }));
+      filter.appendChild(svgElement("feBlend", { in: "rg", in2: "blue", mode: "screen", result: "output" }));
+    } else {
+      filter.appendChild(displace(lens.distortion, "output"));
+    }
+    filter.appendChild(svgElement("feGaussianBlur", { in: "output", stdDeviation: "0.2" }));
+    return filter;
+  }
+  function displacementMap() {
+    const w2 = 400;
+    const h2 = 200;
+    const r = 20;
+    const edge = Math.min(w2, h2) * (0.07 * 0.5);
+    const svg2 = `<svg viewBox="0 0 ${w2} ${h2}" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="lq-red" x1="100%" y1="0%" x2="0%" y2="0%"><stop offset="0%" stop-color="#0000"/><stop offset="100%" stop-color="red"/></linearGradient><linearGradient id="lq-blue" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#0000"/><stop offset="100%" stop-color="blue"/></linearGradient></defs><rect x="0" y="0" width="${w2}" height="${h2}" fill="black"></rect><rect x="0" y="0" width="${w2}" height="${h2}" rx="${r}" fill="url(#lq-red)" /><rect x="0" y="0" width="${w2}" height="${h2}" rx="${r}" fill="url(#lq-blue)" style="mix-blend-mode: screen" /><rect x="${edge}" y="${edge}" width="${w2 - edge * 2}" height="${h2 - edge * 2}" rx="${r}" fill="hsl(0 0% 50% / 0.93)" style="filter:blur(2px)" /></svg>`;
+    return `data:image/svg+xml,${encodeURIComponent(svg2)}`;
+  }
+
+  // node_modules/@kawarp/core/dist/index.js
+  var BLUR_SIZE = 128;
+  var VERTEX_SHADER = `
+  attribute vec2 a_position;
+  attribute vec2 a_texCoord;
+  varying vec2 v_texCoord;
+  void main() {
+    gl_Position = vec4(a_position, 0.0, 1.0);
+    v_texCoord = a_texCoord;
+  }
+`;
+  var KAWASE_BLUR_SHADER = `
+  precision highp float;
+  uniform sampler2D u_texture;
+  uniform vec2 u_resolution;
+  uniform float u_offset;
+  varying vec2 v_texCoord;
+
+  void main() {
+    highp vec2 texelSize = 1.0 / u_resolution;
+    highp vec4 color = vec4(0.0);
+
+    color += texture2D(u_texture, v_texCoord + vec2(-u_offset, -u_offset) * texelSize);
+    color += texture2D(u_texture, v_texCoord + vec2(u_offset, -u_offset) * texelSize);
+    color += texture2D(u_texture, v_texCoord + vec2(-u_offset, u_offset) * texelSize);
+    color += texture2D(u_texture, v_texCoord + vec2(u_offset, u_offset) * texelSize);
+
+    gl_FragColor = color * 0.25;
+  }
+`;
+  var BLEND_SHADER = `
+  precision highp float;
+  uniform sampler2D u_texture1;
+  uniform sampler2D u_texture2;
+  uniform float u_blend;
+  varying vec2 v_texCoord;
+
+  void main() {
+    vec4 color1 = texture2D(u_texture1, v_texCoord);
+    vec4 color2 = texture2D(u_texture2, v_texCoord);
+    gl_FragColor = mix(color1, color2, u_blend);
+  }
+`;
+  var TINT_SHADER = `
+  precision highp float;
+  uniform sampler2D u_texture;
+  uniform vec3 u_tintColor;
+  uniform float u_tintIntensity;
+  varying vec2 v_texCoord;
+
+  void main() {
+    vec4 color = texture2D(u_texture, v_texCoord);
+    float luma = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+
+    // darkMask: 1.0 for black, 0.0 for luma >= 0.5
+    float darkMask = 1.0 - smoothstep(0.0, 0.5, luma);
+
+    // Blend dark areas toward tint color
+    color.rgb = mix(color.rgb, u_tintColor, darkMask * u_tintIntensity);
+
+    gl_FragColor = color;
+  }
+`;
+  var DOMAIN_WARP_SHADER = `
+  precision highp float;
+  uniform sampler2D u_texture;
+  uniform float u_time;
+  uniform float u_intensity;
+  varying vec2 v_texCoord;
+
+  vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+  vec2 mod289(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+  vec3 permute(vec3 x) { return mod289(((x*34.0)+1.0)*x); }
+
+  float snoise(vec2 v) {
+    const vec4 C = vec4(0.211324865405187, 0.366025403784439,
+                        -0.577350269189626, 0.024390243902439);
+    vec2 i  = floor(v + dot(v, C.yy));
+    vec2 x0 = v - i + dot(i, C.xx);
+    vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+    vec4 x12 = x0.xyxy + C.xxzz;
+    x12.xy -= i1;
+    i = mod289(i);
+    vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0)) + i.x + vec3(0.0, i1.x, 1.0));
+    vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy), dot(x12.zw,x12.zw)), 0.0);
+    m = m*m; m = m*m;
+    vec3 x = 2.0 * fract(p * C.www) - 1.0;
+    vec3 h = abs(x) - 0.5;
+    vec3 ox = floor(x + 0.5);
+    vec3 a0 = x - ox;
+    m *= 1.79284291400159 - 0.85373472095314 * (a0*a0 + h*h);
+    vec3 g;
+    g.x = a0.x * x0.x + h.x * x0.y;
+    g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+    return 130.0 * dot(m, g);
+  }
+
+  void main() {
+    vec2 uv = v_texCoord;
+    float t = u_time * 0.05;
+
+    vec2 center = uv - 0.5;
+    float centerWeight = 1.0 - smoothstep(0.0, 0.7, length(center));
+
+    // Large-scale movement (slow, big blobs)
+    float n1 = snoise(uv * 0.35 + vec2(t, t * 0.7));
+    float n2 = snoise(uv * 0.35 + vec2(-t * 0.8, t * 0.5) + vec2(50.0, 50.0));
+
+    // Medium-scale detail (adds organic movement)
+    float n3 = snoise(uv * 0.9 + vec2(t * 1.2, -t) + vec2(100.0, 0.0));
+    float n4 = snoise(uv * 0.9 + vec2(-t, t * 1.1) + vec2(0.0, 100.0));
+
+    // Combine two octaves
+    vec2 warp = vec2(
+      n1 * 0.65 + n3 * 0.35,
+      n2 * 0.65 + n4 * 0.35
+    ) * centerWeight;
+
+    vec2 warpedUV = uv + warp * u_intensity;
+    warpedUV = clamp(warpedUV, 0.0, 1.0);
+
+    gl_FragColor = texture2D(u_texture, warpedUV);
+  }
+`;
+  var OUTPUT_SHADER = `
+  precision highp float;
+  uniform sampler2D u_texture;
+  uniform float u_saturation;
+  uniform float u_dithering;
+  uniform float u_time;
+  uniform float u_scale;
+  uniform vec2 u_resolution;
+  varying vec2 v_texCoord;
+
+  highp float hash(highp vec3 p) {
+    p = fract(p * 0.1031);
+    p += dot(p, p.zyx + 31.32);
+    return fract((p.x + p.y) * p.z);
+  }
+
+  void main() {
+    vec2 uv = (v_texCoord - 0.5) / u_scale + 0.5;
+    uv = clamp(uv, 0.0, 1.0);
+
+    vec4 color = texture2D(u_texture, uv);
+
+    vec2 center = v_texCoord - 0.5;
+    float vignette = 1.0 - dot(center, center) * 0.3;
+    color.rgb *= vignette;
+
+    float gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+    color.rgb = mix(vec3(gray), color.rgb, u_saturation);
+
+    highp vec2 pixelPos = floor(v_texCoord * u_resolution);
+    highp float noise = hash(vec3(pixelPos, floor(u_time * 60.0)));
+    color.rgb += (noise - 0.5) * u_dithering;
+
+    gl_FragColor = color;
+  }
+`;
+  var Kawarp = class {
+    canvas;
+    gl;
+    halfFloatExt = null;
+    halfFloatLinearExt = null;
+    // Shader programs
+    blurProgram;
+    blendProgram;
+    tintProgram;
+    warpProgram;
+    outputProgram;
+    // Buffers
+    positionBuffer;
+    texCoordBuffer;
+    // Source texture (original image)
+    sourceTexture;
+    // Small FBOs for blur (BLUR_SIZE x BLUR_SIZE)
+    blurFBO1;
+    blurFBO2;
+    // Album FBOs for crossfade (BLUR_SIZE x BLUR_SIZE)
+    currentAlbumFBO;
+    nextAlbumFBO;
+    // Full-res FBO for warp output
+    warpFBO;
+    // Animation state
+    animationId = null;
+    lastFrameTime = 0;
+    accumulatedTime = 0;
+    isPlaying = false;
+    // Transition state
+    isTransitioning = false;
+    transitionStartTime = 0;
+    _transitionDuration;
+    // Options
+    _warpIntensity;
+    _blurPasses;
+    _animationSpeed;
+    _targetAnimationSpeed;
+    _saturation;
+    _tintColor;
+    _tintIntensity;
+    _dithering;
+    _scale;
+    hasImage = false;
+    // Cached attribute locations
+    attribs;
+    // Cached uniform locations
+    uniforms;
+    constructor(canvas, options = {}) {
+      this.canvas = canvas;
+      const gl = canvas.getContext("webgl", { preserveDrawingBuffer: true });
+      if (!gl)
+        throw new Error("WebGL not supported");
+      this.gl = gl;
+      this.halfFloatExt = gl.getExtension("OES_texture_half_float");
+      this.halfFloatLinearExt = gl.getExtension("OES_texture_half_float_linear");
+      this._warpIntensity = options.warpIntensity ?? 1;
+      this._blurPasses = options.blurPasses ?? 8;
+      this._animationSpeed = options.animationSpeed ?? 1;
+      this._targetAnimationSpeed = this._animationSpeed;
+      this._transitionDuration = options.transitionDuration ?? 1e3;
+      this._saturation = options.saturation ?? 1.5;
+      this._tintColor = options.tintColor ?? [0.157, 0.157, 0.235];
+      this._tintIntensity = options.tintIntensity ?? 0.15;
+      this._dithering = options.dithering ?? 8e-3;
+      this._scale = options.scale ?? 1;
+      this.blurProgram = this.createProgram(VERTEX_SHADER, KAWASE_BLUR_SHADER);
+      this.blendProgram = this.createProgram(VERTEX_SHADER, BLEND_SHADER);
+      this.tintProgram = this.createProgram(VERTEX_SHADER, TINT_SHADER);
+      this.warpProgram = this.createProgram(VERTEX_SHADER, DOMAIN_WARP_SHADER);
+      this.outputProgram = this.createProgram(VERTEX_SHADER, OUTPUT_SHADER);
+      this.attribs = {
+        position: gl.getAttribLocation(this.blurProgram, "a_position"),
+        texCoord: gl.getAttribLocation(this.blurProgram, "a_texCoord")
+      };
+      this.uniforms = {
+        blur: {
+          resolution: gl.getUniformLocation(this.blurProgram, "u_resolution"),
+          texture: gl.getUniformLocation(this.blurProgram, "u_texture"),
+          offset: gl.getUniformLocation(this.blurProgram, "u_offset")
+        },
+        blend: {
+          texture1: gl.getUniformLocation(this.blendProgram, "u_texture1"),
+          texture2: gl.getUniformLocation(this.blendProgram, "u_texture2"),
+          blend: gl.getUniformLocation(this.blendProgram, "u_blend")
+        },
+        warp: {
+          texture: gl.getUniformLocation(this.warpProgram, "u_texture"),
+          time: gl.getUniformLocation(this.warpProgram, "u_time"),
+          intensity: gl.getUniformLocation(this.warpProgram, "u_intensity")
+        },
+        tint: {
+          texture: gl.getUniformLocation(this.tintProgram, "u_texture"),
+          tintColor: gl.getUniformLocation(this.tintProgram, "u_tintColor"),
+          tintIntensity: gl.getUniformLocation(this.tintProgram, "u_tintIntensity")
+        },
+        output: {
+          texture: gl.getUniformLocation(this.outputProgram, "u_texture"),
+          saturation: gl.getUniformLocation(this.outputProgram, "u_saturation"),
+          dithering: gl.getUniformLocation(this.outputProgram, "u_dithering"),
+          time: gl.getUniformLocation(this.outputProgram, "u_time"),
+          scale: gl.getUniformLocation(this.outputProgram, "u_scale"),
+          resolution: gl.getUniformLocation(this.outputProgram, "u_resolution")
+        }
+      };
+      this.positionBuffer = this.createBuffer(new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]));
+      this.texCoordBuffer = this.createBuffer(new Float32Array([0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1]));
+      this.sourceTexture = this.createTexture();
+      this.blurFBO1 = this.createFramebuffer(BLUR_SIZE, BLUR_SIZE, true);
+      this.blurFBO2 = this.createFramebuffer(BLUR_SIZE, BLUR_SIZE, true);
+      this.currentAlbumFBO = this.createFramebuffer(BLUR_SIZE, BLUR_SIZE, true);
+      this.nextAlbumFBO = this.createFramebuffer(BLUR_SIZE, BLUR_SIZE, true);
+      this.warpFBO = this.createFramebuffer(1, 1, true);
+      this.resize();
+    }
+    // Getters and setters
+    get warpIntensity() {
+      return this._warpIntensity;
+    }
+    set warpIntensity(value) {
+      this._warpIntensity = Math.max(0, Math.min(1, value));
+    }
+    get blurPasses() {
+      return this._blurPasses;
+    }
+    set blurPasses(value) {
+      const newValue = Math.max(1, Math.min(40, Math.floor(value)));
+      if (newValue !== this._blurPasses) {
+        this._blurPasses = newValue;
+        if (this.hasImage) {
+          this.reblurCurrentImage();
+        }
+      }
+    }
+    get animationSpeed() {
+      return this._targetAnimationSpeed;
+    }
+    set animationSpeed(value) {
+      this._targetAnimationSpeed = Math.max(0.1, Math.min(5, value));
+    }
+    get transitionDuration() {
+      return this._transitionDuration;
+    }
+    set transitionDuration(value) {
+      this._transitionDuration = Math.max(0, Math.min(5e3, value));
+    }
+    get saturation() {
+      return this._saturation;
+    }
+    set saturation(value) {
+      this._saturation = Math.max(0, Math.min(3, value));
+    }
+    get tintColor() {
+      return this._tintColor;
+    }
+    set tintColor(value) {
+      const newValue = value.map((v2) => Math.max(0, Math.min(1, v2)));
+      const changed = newValue.some((v2, i2) => v2 !== this._tintColor[i2]);
+      if (changed) {
+        this._tintColor = newValue;
+        if (this.hasImage) {
+          this.reblurCurrentImage();
+        }
+      }
+    }
+    get tintIntensity() {
+      return this._tintIntensity;
+    }
+    set tintIntensity(value) {
+      const newValue = Math.max(0, Math.min(1, value));
+      if (newValue !== this._tintIntensity) {
+        this._tintIntensity = newValue;
+        if (this.hasImage) {
+          this.reblurCurrentImage();
+        }
+      }
+    }
+    get dithering() {
+      return this._dithering;
+    }
+    set dithering(value) {
+      this._dithering = Math.max(0, Math.min(0.1, value));
+    }
+    get scale() {
+      return this._scale;
+    }
+    set scale(value) {
+      this._scale = Math.max(0.01, Math.min(4, value));
+    }
+    setOptions(options) {
+      if (options.warpIntensity !== void 0)
+        this.warpIntensity = options.warpIntensity;
+      if (options.blurPasses !== void 0)
+        this.blurPasses = options.blurPasses;
+      if (options.animationSpeed !== void 0)
+        this.animationSpeed = options.animationSpeed;
+      if (options.transitionDuration !== void 0)
+        this.transitionDuration = options.transitionDuration;
+      if (options.saturation !== void 0)
+        this.saturation = options.saturation;
+      if (options.tintColor !== void 0)
+        this.tintColor = options.tintColor;
+      if (options.tintIntensity !== void 0)
+        this.tintIntensity = options.tintIntensity;
+      if (options.dithering !== void 0)
+        this.dithering = options.dithering;
+      if (options.scale !== void 0)
+        this.scale = options.scale;
+    }
+    getOptions() {
+      return {
+        warpIntensity: this._warpIntensity,
+        blurPasses: this._blurPasses,
+        animationSpeed: this._targetAnimationSpeed,
+        transitionDuration: this._transitionDuration,
+        saturation: this._saturation,
+        tintColor: this._tintColor,
+        tintIntensity: this._tintIntensity,
+        dithering: this._dithering,
+        scale: this._scale
+      };
+    }
+    // Image loading methods
+    loadImage(src) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => {
+          this.gl.bindTexture(this.gl.TEXTURE_2D, this.sourceTexture);
+          this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA, this.gl.RGBA, this.gl.UNSIGNED_BYTE, img);
+          this.processNewImage();
+          resolve();
+        };
+        img.onerror = () => reject(new Error(`Failed to load image: ${src}`));
+        img.src = src;
+      });
+    }
+    loadImageElement(source) {
+      this.gl.bindTexture(this.gl.TEXTURE_2D, this.sourceTexture);
+      this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA, this.gl.RGBA, this.gl.UNSIGNED_BYTE, source);
+      this.processNewImage();
+    }
+    loadImageData(data, width, height) {
+      this.gl.bindTexture(this.gl.TEXTURE_2D, this.sourceTexture);
+      this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA, width, height, 0, this.gl.RGBA, this.gl.UNSIGNED_BYTE, data instanceof Uint8ClampedArray ? new Uint8Array(data.buffer) : data);
+      this.processNewImage();
+    }
+    loadFromImageData(imageData) {
+      this.loadImageData(imageData.data, imageData.width, imageData.height);
+    }
+    async loadBlob(blob) {
+      const bitmap = await createImageBitmap(blob);
+      this.loadImageElement(bitmap);
+      bitmap.close();
+    }
+    loadBase64(base64) {
+      const src = base64.startsWith("data:") ? base64 : `data:image/png;base64,${base64}`;
+      return this.loadImage(src);
+    }
+    async loadArrayBuffer(buffer, mimeType = "image/png") {
+      const blob = new Blob([buffer], { type: mimeType });
+      return this.loadBlob(blob);
+    }
+    loadGradient(colors, angle = 135) {
+      const size = 512;
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      if (!ctx)
+        return;
+      const angleRad = angle * Math.PI / 180;
+      const x1 = size / 2 - Math.cos(angleRad) * size;
+      const y1 = size / 2 - Math.sin(angleRad) * size;
+      const x2 = size / 2 + Math.cos(angleRad) * size;
+      const y2 = size / 2 + Math.sin(angleRad) * size;
+      const gradient = ctx.createLinearGradient(x1, y1, x2, y2);
+      colors.forEach((color, i2) => {
+        gradient.addColorStop(i2 / (colors.length - 1), color);
+      });
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, size, size);
+      this.loadImageElement(canvas);
     }
     /**
-     * The reactbits original displacement map: red ramps transparent→red
-     * right-to-left (x axis), blue ramps transparent→blue top-to-bottom and is
-     * screen-blended on top. The blurred inner rect keeps the centre clear, so
-     * only the edge band refracts.
+     * Process a new image: blur it and start transition
+     * This is the key optimization - blur only runs here, not every frame!
      */
-    generateDisplacementMap(actualWidth, actualHeight) {
-      const o = this.opts;
-      const edgeSize = Math.min(actualWidth, actualHeight) * (o.borderWidth * 0.5);
-      const redGradId = `${this.filterId}-red-grad`;
-      const blueGradId = `${this.filterId}-blue-grad`;
-      const svgContent = `
-      <svg viewBox="0 0 ${actualWidth} ${actualHeight}" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <linearGradient id="${redGradId}" x1="100%" y1="0%" x2="0%" y2="0%">
-            <stop offset="0%" stop-color="#0000"/>
-            <stop offset="100%" stop-color="red"/>
-          </linearGradient>
-          <linearGradient id="${blueGradId}" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stop-color="#0000"/>
-            <stop offset="100%" stop-color="blue"/>
-          </linearGradient>
-        </defs>
-        <rect x="0" y="0" width="${actualWidth}" height="${actualHeight}" fill="black"></rect>
-        <rect x="0" y="0" width="${actualWidth}" height="${actualHeight}" rx="${o.borderRadius}" fill="url(#${redGradId})" />
-        <rect x="0" y="0" width="${actualWidth}" height="${actualHeight}" rx="${o.borderRadius}" fill="url(#${blueGradId})" style="mix-blend-mode: ${o.mixBlendMode}" />
-        <rect x="${edgeSize}" y="${edgeSize}" width="${actualWidth - edgeSize * 2}" height="${actualHeight - edgeSize * 2}" rx="${o.borderRadius}" fill="hsl(0 0% ${o.brightness}% / ${o.opacity})" style="filter:blur(${o.blur}px)" />
-      </svg>
-    `;
-      return `data:image/svg+xml,${encodeURIComponent(svgContent)}`;
+    processNewImage() {
+      [this.currentAlbumFBO, this.nextAlbumFBO] = [
+        this.nextAlbumFBO,
+        this.currentAlbumFBO
+      ];
+      this.blurSourceInto(this.nextAlbumFBO);
+      this.hasImage = true;
+      this.isTransitioning = true;
+      this.transitionStartTime = performance.now();
     }
-    updateDisplacementMap() {
-      if (this.destroyed || !this.feImage) return;
-      const rect = this.el.getBoundingClientRect();
-      if (!rect.width || !rect.height) return;
-      if (rect.width === this.lastSize.width && rect.height === this.lastSize.height) return;
-      this.lastSize = { width: rect.width, height: rect.height };
-      const dataUrl = this.generateDisplacementMap(rect.width, rect.height);
-      this.feImage.setAttribute("href", dataUrl);
-      this.feImage.setAttributeNS("http://www.w3.org/1999/xlink", "xlink:href", dataUrl);
-      this.feImage.setAttribute("width", "100%");
-      this.feImage.setAttribute("height", "100%");
+    /**
+     * Re-blur the current image (used when blurPasses changes)
+     * Updates nextAlbumFBO in place without starting a transition
+     */
+    reblurCurrentImage() {
+      this.blurSourceInto(this.nextAlbumFBO);
+    }
+    /**
+     * Blur the source texture into the target FBO (with tint applied before blur)
+     */
+    blurSourceInto(targetFBO) {
+      const gl = this.gl;
+      gl.useProgram(this.tintProgram);
+      this.setupAttributes();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.blurFBO1.framebuffer);
+      gl.viewport(0, 0, BLUR_SIZE, BLUR_SIZE);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.sourceTexture);
+      gl.uniform1i(this.uniforms.tint.texture, 0);
+      gl.uniform3fv(this.uniforms.tint.tintColor, this._tintColor);
+      gl.uniform1f(this.uniforms.tint.tintIntensity, this._tintIntensity);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      gl.useProgram(this.blurProgram);
+      this.setupAttributes();
+      gl.uniform2f(this.uniforms.blur.resolution, BLUR_SIZE, BLUR_SIZE);
+      gl.uniform1i(this.uniforms.blur.texture, 0);
+      let readFBO = this.blurFBO1;
+      let writeFBO = this.blurFBO2;
+      for (let i2 = 0; i2 < this._blurPasses; i2++) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, writeFBO.framebuffer);
+        gl.viewport(0, 0, BLUR_SIZE, BLUR_SIZE);
+        gl.bindTexture(gl.TEXTURE_2D, readFBO.texture);
+        gl.uniform1f(this.uniforms.blur.offset, i2 + 0.5);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        [readFBO, writeFBO] = [writeFBO, readFBO];
+      }
+      gl.bindFramebuffer(gl.FRAMEBUFFER, targetFBO.framebuffer);
+      gl.viewport(0, 0, BLUR_SIZE, BLUR_SIZE);
+      gl.bindTexture(gl.TEXTURE_2D, readFBO.texture);
+      gl.uniform1f(this.uniforms.blur.offset, 0);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+    }
+    resize() {
+      const width = this.canvas.width;
+      const height = this.canvas.height;
+      if (this.warpFBO)
+        this.deleteFramebuffer(this.warpFBO);
+      this.warpFBO = this.createFramebuffer(width, height, true);
+    }
+    start() {
+      if (this.isPlaying)
+        return;
+      this.isPlaying = true;
+      this.lastFrameTime = performance.now();
+      requestAnimationFrame(this.renderLoop);
+    }
+    stop() {
+      this.isPlaying = false;
+      if (this.animationId !== null) {
+        cancelAnimationFrame(this.animationId);
+        this.animationId = null;
+      }
+    }
+    renderFrame(time) {
+      const now = performance.now();
+      if (time !== void 0) {
+        this.render(time, now);
+      } else {
+        const dt = (now - this.lastFrameTime) / 1e3;
+        this.lastFrameTime = now;
+        this._animationSpeed += (this._targetAnimationSpeed - this._animationSpeed) * 0.05;
+        this.accumulatedTime += dt * this._animationSpeed;
+        this.render(this.accumulatedTime, now);
+      }
+    }
+    dispose() {
+      this.stop();
+      const gl = this.gl;
+      gl.deleteProgram(this.blurProgram);
+      gl.deleteProgram(this.blendProgram);
+      gl.deleteProgram(this.tintProgram);
+      gl.deleteProgram(this.warpProgram);
+      gl.deleteProgram(this.outputProgram);
+      gl.deleteBuffer(this.positionBuffer);
+      gl.deleteBuffer(this.texCoordBuffer);
+      gl.deleteTexture(this.sourceTexture);
+      this.deleteFramebuffer(this.blurFBO1);
+      this.deleteFramebuffer(this.blurFBO2);
+      this.deleteFramebuffer(this.currentAlbumFBO);
+      this.deleteFramebuffer(this.nextAlbumFBO);
+      this.deleteFramebuffer(this.warpFBO);
+    }
+    renderLoop = (timestamp) => {
+      if (!this.isPlaying)
+        return;
+      const dt = (timestamp - this.lastFrameTime) / 1e3;
+      this.lastFrameTime = timestamp;
+      this._animationSpeed += (this._targetAnimationSpeed - this._animationSpeed) * 0.05;
+      this.accumulatedTime += dt * this._animationSpeed;
+      this.render(this.accumulatedTime, timestamp);
+      this.animationId = requestAnimationFrame(this.renderLoop);
+    };
+    /**
+     * Main render loop - very efficient!
+     * Just: blend album FBOs → domain warp → output
+     */
+    render(time, timestamp = performance.now()) {
+      const gl = this.gl;
+      const width = this.canvas.width;
+      const height = this.canvas.height;
+      let blendFactor = 1;
+      if (this.isTransitioning) {
+        const elapsed = timestamp - this.transitionStartTime;
+        blendFactor = Math.min(1, elapsed / this._transitionDuration);
+        if (blendFactor >= 1) {
+          this.isTransitioning = false;
+        }
+      }
+      let blendedTexture;
+      if (this.isTransitioning && blendFactor < 1) {
+        gl.useProgram(this.blendProgram);
+        this.setupAttributes();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.blurFBO1.framebuffer);
+        gl.viewport(0, 0, BLUR_SIZE, BLUR_SIZE);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.currentAlbumFBO.texture);
+        gl.uniform1i(this.uniforms.blend.texture1, 0);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, this.nextAlbumFBO.texture);
+        gl.uniform1i(this.uniforms.blend.texture2, 1);
+        gl.uniform1f(this.uniforms.blend.blend, blendFactor);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        blendedTexture = this.blurFBO1.texture;
+        gl.useProgram(this.warpProgram);
+        this.setupAttributes();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.warpFBO.framebuffer);
+        gl.viewport(0, 0, width, height);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, blendedTexture);
+        gl.uniform1i(this.uniforms.warp.texture, 0);
+        gl.uniform1f(this.uniforms.warp.time, time);
+        gl.uniform1f(this.uniforms.warp.intensity, this._warpIntensity);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        gl.useProgram(this.outputProgram);
+        this.setupAttributes();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.viewport(0, 0, width, height);
+        gl.bindTexture(gl.TEXTURE_2D, this.warpFBO.texture);
+        gl.uniform1i(this.uniforms.output.texture, 0);
+        gl.uniform1f(this.uniforms.output.saturation, this._saturation);
+        gl.uniform1f(this.uniforms.output.dithering, this._dithering);
+        gl.uniform1f(this.uniforms.output.time, time);
+        gl.uniform1f(this.uniforms.output.scale, this._scale);
+        gl.uniform2f(this.uniforms.output.resolution, width, height);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+      } else {
+        gl.useProgram(this.warpProgram);
+        this.setupAttributes();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.warpFBO.framebuffer);
+        gl.viewport(0, 0, width, height);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.nextAlbumFBO.texture);
+        gl.uniform1i(this.uniforms.warp.texture, 0);
+        gl.uniform1f(this.uniforms.warp.time, time);
+        gl.uniform1f(this.uniforms.warp.intensity, this._warpIntensity);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        gl.useProgram(this.outputProgram);
+        this.setupAttributes();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.viewport(0, 0, width, height);
+        gl.bindTexture(gl.TEXTURE_2D, this.warpFBO.texture);
+        gl.uniform1i(this.uniforms.output.texture, 0);
+        gl.uniform1f(this.uniforms.output.saturation, this._saturation);
+        gl.uniform1f(this.uniforms.output.dithering, this._dithering);
+        gl.uniform1f(this.uniforms.output.time, time);
+        gl.uniform1f(this.uniforms.output.scale, this._scale);
+        gl.uniform2f(this.uniforms.output.resolution, width, height);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+      }
+    }
+    setupAttributes() {
+      const gl = this.gl;
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+      gl.enableVertexAttribArray(this.attribs.position);
+      gl.vertexAttribPointer(this.attribs.position, 2, gl.FLOAT, false, 0, 0);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
+      gl.enableVertexAttribArray(this.attribs.texCoord);
+      gl.vertexAttribPointer(this.attribs.texCoord, 2, gl.FLOAT, false, 0, 0);
+    }
+    createShader(type, source) {
+      const gl = this.gl;
+      const shader = gl.createShader(type);
+      if (!shader)
+        throw new Error("Failed to create shader");
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        const error = gl.getShaderInfoLog(shader);
+        gl.deleteShader(shader);
+        throw new Error(`Shader compile error: ${error}`);
+      }
+      return shader;
+    }
+    createProgram(vertexSource, fragmentSource) {
+      const gl = this.gl;
+      const vertexShader = this.createShader(gl.VERTEX_SHADER, vertexSource);
+      const fragmentShader = this.createShader(gl.FRAGMENT_SHADER, fragmentSource);
+      const program = gl.createProgram();
+      if (!program)
+        throw new Error("Failed to create program");
+      gl.attachShader(program, vertexShader);
+      gl.attachShader(program, fragmentShader);
+      gl.linkProgram(program);
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        const error = gl.getProgramInfoLog(program);
+        gl.deleteProgram(program);
+        throw new Error(`Program link error: ${error}`);
+      }
+      gl.deleteShader(vertexShader);
+      gl.deleteShader(fragmentShader);
+      return program;
+    }
+    createBuffer(data) {
+      const gl = this.gl;
+      const buffer = gl.createBuffer();
+      if (!buffer)
+        throw new Error("Failed to create buffer");
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+      return buffer;
+    }
+    createTexture() {
+      const gl = this.gl;
+      const texture = gl.createTexture();
+      if (!texture)
+        throw new Error("Failed to create texture");
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      return texture;
+    }
+    createFramebuffer(width, height, useHighPrecision = false) {
+      const gl = this.gl;
+      const texture = this.createTexture();
+      const canUseHalfFloat = useHighPrecision && this.halfFloatExt && this.halfFloatLinearExt;
+      const type = canUseHalfFloat ? this.halfFloatExt.HALF_FLOAT_OES : gl.UNSIGNED_BYTE;
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, type, null);
+      const framebuffer = gl.createFramebuffer();
+      if (!framebuffer)
+        throw new Error("Failed to create framebuffer");
+      gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+      return { framebuffer, texture };
+    }
+    deleteFramebuffer(fbo) {
+      this.gl.deleteFramebuffer(fbo.framebuffer);
+      this.gl.deleteTexture(fbo.texture);
     }
   };
 
-  // src/observer.ts
-  function watchGlassTargets(targets) {
-    const attached = /* @__PURE__ */ new Map();
-    let scheduled = false;
-    const scan = () => {
-      scheduled = false;
-      const matched = /* @__PURE__ */ new Set();
-      for (const target of targets) {
-        for (const el of document.querySelectorAll(target.selector)) {
-          if (el.closest(".liquify-popup-clone")) continue;
-          matched.add(el);
-          const existing = attached.get(el);
-          if (existing) {
-            existing.ensureApplied();
-          } else {
-            attached.set(el, new GlassSurface(el, target.options));
+  // src/settings/shared.ts
+  function clamp(n, min, max) {
+    return Math.min(max, Math.max(min, n));
+  }
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+  function readLS(key, fallback) {
+    const value = localStorage.getItem(key);
+    return value === null || value === "" ? fallback : value;
+  }
+  function readNum(key, fallback) {
+    const raw = localStorage.getItem(key);
+    const parsed = raw === null ? NaN : parseInt(raw, 10);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+  function ensureStyleTag(id) {
+    let style = document.getElementById(id);
+    if (!style) {
+      style = document.createElement("style");
+      style.id = id;
+      document.head.appendChild(style);
+    }
+    return style;
+  }
+  function updateStyle(id, css) {
+    ensureStyleTag(id).textContent = css;
+  }
+  var HEADER_IMAGE = ".main-view-container :is(.CFSFpy4cXrwDj5sahXMg, .MBkMkO6BD5uZ1ZM2pvvU)";
+  var ARTIST_HEADER_IMAGE = '.main-view-container:has([data-testid="artist-page"]) :is(.CFSFpy4cXrwDj5sahXMg, .MBkMkO6BD5uZ1ZM2pvvU)';
+  var CANVAS_CONTAINER_SEL = ".dqJFUEMpr3OgDWpVX6TH";
+  function hasMountedCanvasMedia(el) {
+    if (!el) return false;
+    if (el.querySelector("video")) return true;
+    const img = el.querySelector("img");
+    return !!img && !!img.getAttribute("src");
+  }
+  function getOsName() {
+    return (Spicetify?.Platform?.PlatformData?.os_name || navigator.platform || "").toString().toLowerCase();
+  }
+  function isUnixLikeOS() {
+    const os = getOsName();
+    return os.includes("linux") || os.includes("mac") || os.includes("darwin") || os.includes("osx") || os.includes("macos");
+  }
+
+  // src/settings/features/backgroundAppearance.ts
+  var BG_ENGINE_KEY = "liquify-bg-engine";
+  function getBgEngine() {
+    return localStorage.getItem(BG_ENGINE_KEY) === "tiles" ? "tiles" : "kawarp";
+  }
+  function setBgEngine(engine) {
+    localStorage.setItem(BG_ENGINE_KEY, engine);
+    applyBackgroundAppearance();
+    window.dispatchEvent(new Event("liquifyBackgroundChange"));
+  }
+  var HIRES_COVER_KEY = "liquify-hires-cover";
+  function isHiResCoverOn() {
+    return (localStorage.getItem(HIRES_COVER_KEY) || "on") === "on";
+  }
+  function setHiResCover(on) {
+    localStorage.setItem(HIRES_COVER_KEY, on ? "on" : "off");
+    window.dispatchEvent(new Event("liquifyBackgroundChange"));
+  }
+  var BG_SURFACES = {
+    // The two crossfading cover layers — every non-animated mode.
+    static: {
+      blurKey: "liquify-bg-blur",
+      brightnessKey: "liquify-bg-brightness",
+      blurVar: "--liquify-bg-blur",
+      brightnessVar: "--liquify-bg-brightness",
+      defaults: { blur: 7, brightness: 45 }
+    },
+    // Kawarp: the blur is rescaled into render passes in kawarpBackground.ts, so
+    // only the brightness reaches CSS.
+    kawarp: {
+      blurKey: "liquify-kawarp-blur",
+      brightnessKey: "liquify-kawarp-brightness",
+      blurVar: "",
+      brightnessVar: "--liquify-kawarp-brightness",
+      defaults: { blur: 10, brightness: 45 }
+    },
+    // The drifting blob field. Its old look was hard-coded blur(50px)
+    // brightness(60%); those are its defaults so nothing changes for anyone who
+    // never touches the sliders.
+    tiles: {
+      blurKey: "liquify-tiles-blur",
+      brightnessKey: "liquify-tiles-brightness",
+      blurVar: "--liquify-tiles-blur",
+      brightnessVar: "--liquify-tiles-brightness",
+      defaults: { blur: 50, brightness: 60 }
+    }
+  };
+  var BG_BLUR_RANGE = { static: 100, kawarp: 100, tiles: 150 };
+  function readBackgroundAppearance(surface, field) {
+    const spec = BG_SURFACES[surface];
+    const key = field === "blur" ? spec.blurKey : spec.brightnessKey;
+    return readNum(key, spec.defaults[field]);
+  }
+  function readAllBackgroundAppearance() {
+    const all = {};
+    for (const surface of Object.keys(BG_SURFACES)) {
+      all[surface] = {
+        blur: readBackgroundAppearance(surface, "blur"),
+        brightness: readBackgroundAppearance(surface, "brightness")
+      };
+    }
+    return all;
+  }
+  function applyBackgroundAppearance() {
+    const style = document.documentElement.style;
+    const write = (name, value) => {
+      if (!name) return;
+      if (style.getPropertyValue(name) === value) return;
+      style.setProperty(name, value);
+    };
+    for (const surface of Object.keys(BG_SURFACES)) {
+      const spec = BG_SURFACES[surface];
+      write(spec.blurVar, `${readBackgroundAppearance(surface, "blur")}px`);
+      write(spec.brightnessVar, `${readBackgroundAppearance(surface, "brightness")}%`);
+    }
+  }
+  function setBackgroundAppearance(surface, field, value) {
+    const spec = BG_SURFACES[surface];
+    localStorage.setItem(field === "blur" ? spec.blurKey : spec.brightnessKey, String(value));
+    applyBackgroundAppearance();
+    window.dispatchEvent(new Event("liquifyBackgroundChange"));
+  }
+  function resetBackgroundAppearance() {
+    for (const surface of Object.keys(BG_SURFACES)) {
+      const spec = BG_SURFACES[surface];
+      localStorage.setItem(spec.blurKey, String(spec.defaults.blur));
+      localStorage.setItem(spec.brightnessKey, String(spec.defaults.brightness));
+    }
+    localStorage.setItem(BG_ENGINE_KEY, "kawarp");
+    applyBackgroundAppearance();
+  }
+  function ensureBackgroundAppearanceApplied() {
+    applyBackgroundAppearance();
+  }
+
+  // src/settings/features/kawarpBackground.ts
+  var KAWARP_KEYS = {
+    warp: "liquify-kawarp-warp",
+    speed: "liquify-kawarp-speed",
+    saturation: "liquify-kawarp-saturation",
+    scale: "liquify-kawarp-scale",
+    contrast: "liquify-kawarp-contrast"
+  };
+  var KAWARP_DEFAULTS = {
+    warp: 50,
+    speed: 100,
+    saturation: 150,
+    scale: 100,
+    contrast: 100
+  };
+  var KAWARP_RANGES = {
+    warp: { min: 0, max: 100 },
+    speed: { min: 0, max: 400 },
+    saturation: { min: 0, max: 500 },
+    scale: { min: 10, max: 400 },
+    contrast: { min: 0, max: 300 }
+  };
+  var CROSSFADE_MS = 600;
+  var TARGET_FPS = 60;
+  var MAX_KAWARP_PX = 1280;
+  var MAX_DPR = 1.5;
+  var RESIZE_SETTLE_MS = 160;
+  var MAX_FRAME_STEP_MS = 250;
+  function read(key) {
+    const range = KAWARP_RANGES[key];
+    return clamp(readNum(KAWARP_KEYS[key], KAWARP_DEFAULTS[key]), range.min, range.max);
+  }
+  function kawarpOptions() {
+    return {
+      // The generic 0-100 slider maps onto Kawarp's 0-1 intensity.
+      warpIntensity: read("warp") / 100,
+      // Kawarp counts blur passes (1-40) rather than pixels, so the slider is
+      // rescaled. It has its own stored value — see backgroundAppearance.ts.
+      blurPasses: Math.max(
+        1,
+        Math.round(clamp(readBackgroundAppearance("kawarp", "blur"), 0, 100) / 100 * 40)
+      ),
+      // Only informational here: the shared loop below advances its own clock, so
+      // the speed is applied there rather than by Kawarp's accumulator.
+      animationSpeed: read("speed") / 100,
+      // Kawarp's own blend stays off — the crossfade is the two-canvas stack in
+      // swap(), so each renderer only ever holds one still image.
+      transitionDuration: 0,
+      saturation: read("saturation") / 100,
+      scale: clamp(read("scale") / 100, 0.01, 4)
+    };
+  }
+  function applyKawarpAppearance() {
+    const style = document.documentElement.style;
+    const value = `${read("contrast")}%`;
+    if (style.getPropertyValue("--liquify-kawarp-contrast") !== value) {
+      style.setProperty("--liquify-kawarp-contrast", value);
+    }
+  }
+  function setKawarpValue(key, value) {
+    localStorage.setItem(KAWARP_KEYS[key], String(value));
+    applyKawarpAppearance();
+    window.dispatchEvent(new Event("liquifyBackgroundChange"));
+  }
+  function resetKawarpDefaults() {
+    for (const key of Object.keys(KAWARP_KEYS)) {
+      localStorage.setItem(KAWARP_KEYS[key], String(KAWARP_DEFAULTS[key]));
+    }
+    applyKawarpAppearance();
+  }
+  var KawarpBackdrop = class {
+    constructor() {
+      this.layers = [];
+      this.useA = true;
+      this.swapTimer = 0;
+      this.resizeTimer = 0;
+      this.resizeObserver = null;
+      // Guards against a slow decode resolving after the mode moved on.
+      this.token = 0;
+      this.lastUrl = "";
+      this.lastOptions = "";
+      this.active = false;
+      // WebGL refused a context, or the picture failed to decode with CORS. Either
+      // way the caller has to paint something else.
+      this.failed = false;
+      this.failedUrls = /* @__PURE__ */ new Set();
+      // --- Shared render loop ---
+      this.live = /* @__PURE__ */ new Set();
+      this.rafId = 0;
+      this.lastFrame = 0;
+      /** The warp's own time. Shared, so both renderers stay in phase. */
+      this.clock = 0;
+      this.speed = 1;
+      this.tick = (now) => {
+        this.rafId = requestAnimationFrame(this.tick);
+        const elapsed = now - this.lastFrame;
+        if (elapsed < 1e3 / TARGET_FPS - 4) return;
+        this.lastFrame = now;
+        this.clock += Math.min(elapsed, MAX_FRAME_STEP_MS) / 1e3 * this.speed;
+        for (const renderer of this.live) {
+          try {
+            renderer.renderFrame(this.clock);
+          } catch {
           }
         }
+      };
+      this.el = document.createElement("div");
+      this.el.className = "liquify-kawarp-bg";
+      this.el.setAttribute("aria-hidden", "true");
+      document.addEventListener("visibilitychange", () => this.syncLoop());
+    }
+    /** Whether this URL can be shown. A picture Kawarp could not read (an image
+     *  host that sends no Access-Control-Allow-Origin — WebGL needs the pixels,
+     *  unlike a plain CSS background) has to fall back to the static layers. */
+    canRender(url) {
+      return !this.failed && !!url && !this.failedUrls.has(url);
+    }
+    setActive(active) {
+      if (this.active === active) return;
+      this.active = active;
+      this.el.classList.toggle("active", active);
+      this.syncLoop();
+    }
+    /** Re-reads the settings and pushes them into both renderers. */
+    applyOptions() {
+      const options = kawarpOptions();
+      this.speed = options.animationSpeed;
+      if (this.layers.length === 0) return;
+      const next = JSON.stringify(options);
+      if (next === this.lastOptions) return;
+      this.lastOptions = next;
+      for (const layer of this.layers) layer.renderer.setOptions(options);
+    }
+    /** Paints `url`, crossfading from whatever is already on screen. */
+    show(url) {
+      if (!this.ensureLayers()) return;
+      this.applyOptions();
+      if (url === this.lastUrl) return;
+      this.lastUrl = url;
+      void this.swap(url);
+    }
+    // --- The loop -------------------------------------------------------------
+    syncLoop() {
+      const wanted = this.active && this.live.size > 0 && !document.hidden;
+      if (wanted && !this.rafId) {
+        this.lastFrame = performance.now();
+        this.rafId = requestAnimationFrame(this.tick);
+      } else if (!wanted && this.rafId) {
+        cancelAnimationFrame(this.rafId);
+        this.rafId = 0;
       }
-      for (const [el, surface] of attached) {
-        if (!el.isConnected || !matched.has(el)) {
-          surface.destroy();
-          attached.delete(el);
-        }
+    }
+    // --- Layers ---------------------------------------------------------------
+    ensureLayers() {
+      if (this.failed) return false;
+      if (this.layers.length === 2) return true;
+      try {
+        this.layers = [0, 1].map(() => {
+          const canvas = document.createElement("canvas");
+          canvas.className = "liquify-kawarp-canvas";
+          this.el.appendChild(canvas);
+          return { canvas, renderer: new Kawarp(canvas, kawarpOptions()) };
+        });
+      } catch (error) {
+        console.warn("[Liquify] Kawarp unavailable, falling back to the static background.", error);
+        this.failed = true;
+        this.el.replaceChildren();
+        this.layers = [];
+        return false;
       }
-    };
-    const schedule = () => {
-      if (scheduled) return;
-      scheduled = true;
-      requestAnimationFrame(scan);
-    };
-    const observer = new MutationObserver(schedule);
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true
+      for (const layer of this.layers) this.sizeCanvas(layer);
+      this.observeResize();
+      this.lastOptions = JSON.stringify(kawarpOptions());
+      return true;
+    }
+    async swap(url) {
+      const token = ++this.token;
+      let source;
+      try {
+        source = await decodeImage(url);
+      } catch {
+        this.failedUrls.add(url);
+        if (token === this.token) this.lastUrl = "";
+        window.dispatchEvent(new Event("liquifyBackgroundChange"));
+        return;
+      }
+      if (token !== this.token || this.layers.length < 2) return;
+      const incoming = this.useA ? this.layers[0] : this.layers[1];
+      const outgoing = this.useA ? this.layers[1] : this.layers[0];
+      this.sizeCanvas(incoming);
+      incoming.renderer.loadImageElement(source);
+      this.live.add(incoming.renderer);
+      this.syncLoop();
+      try {
+        incoming.renderer.renderFrame(this.clock);
+      } catch {
+      }
+      await nextFrame();
+      if (token !== this.token) return;
+      incoming.canvas.classList.add("active", "is-front");
+      outgoing.canvas.classList.remove("is-front");
+      this.useA = !this.useA;
+      window.clearTimeout(this.swapTimer);
+      this.swapTimer = window.setTimeout(() => {
+        if (token !== this.token) return;
+        outgoing.canvas.classList.remove("active");
+        this.live.delete(outgoing.renderer);
+        this.syncLoop();
+      }, CROSSFADE_MS + 80);
+    }
+    observeResize() {
+      if (this.resizeObserver) return;
+      this.resizeObserver = new ResizeObserver(() => {
+        window.clearTimeout(this.resizeTimer);
+        this.resizeTimer = window.setTimeout(() => {
+          for (const layer of this.layers) this.sizeCanvas(layer);
+        }, RESIZE_SETTLE_MS);
+      });
+      this.resizeObserver.observe(this.el);
+    }
+    /** Matches a renderer's backing store to the space it is stretched across.
+     *
+     *  Kawarp draws at canvas.width/height and never touches them — its resize()
+     *  only reallocates the warp buffer to whatever they already say. Left unset,
+     *  every frame renders at a bare canvas's 300x150 and is scaled up by CSS. */
+    sizeCanvas(layer) {
+      const width = this.el.clientWidth;
+      const height = this.el.clientHeight;
+      if (width < 2 || height < 2) return;
+      const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
+      const longest = Math.max(width, height) * dpr;
+      const factor = longest > MAX_KAWARP_PX ? MAX_KAWARP_PX / longest * dpr : dpr;
+      const target = { width: Math.round(width * factor), height: Math.round(height * factor) };
+      if (layer.canvas.width === target.width && layer.canvas.height === target.height) return;
+      layer.canvas.width = target.width;
+      layer.canvas.height = target.height;
+      layer.renderer.resize();
+      try {
+        layer.renderer.renderFrame(this.clock);
+      } catch {
+      }
+    }
+  };
+  function decodeImage(url) {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.src = url;
+    return image.decode().then(() => image);
+  }
+  function nextFrame() {
+    return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+  }
+
+  // src/settings/features/backgroundLibrary.ts
+  var DB_NAME = "liquify-backgrounds";
+  var DB_VERSION = 1;
+  var STORE = "images";
+  var LIBRARY_SELECTED_KEY = "liquify-bg-library-id";
+  var LEGACY_IMAGE_KEY = "liquify-bg-image";
+  var dbPromise = null;
+  function openDb() {
+    if (dbPromise) return dbPromise;
+    dbPromise = new Promise((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: "id" });
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
     });
-    scan();
-    return () => {
-      observer.disconnect();
-      for (const surface of attached.values()) surface.destroy();
-      attached.clear();
-    };
+    return dbPromise;
+  }
+  function tx(mode, run) {
+    return openDb().then(
+      (db) => new Promise((resolve, reject) => {
+        const request = run(db.transaction(STORE, mode).objectStore(STORE));
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      })
+    );
+  }
+  async function listImages() {
+    try {
+      const all = await tx("readonly", (s2) => s2.getAll()) || [];
+      return all.sort((a, b2) => b2.added - a.added);
+    } catch {
+      return [];
+    }
+  }
+  async function addImages(files) {
+    for (const file of files) {
+      if (!file.type.startsWith("image/")) continue;
+      const entry = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        name: file.name,
+        added: Date.now(),
+        blob: file
+      };
+      await tx("readwrite", (s2) => s2.put(entry));
+    }
+  }
+  async function deleteImage(id) {
+    await tx("readwrite", (s2) => s2.delete(id));
+    if (localStorage.getItem(LIBRARY_SELECTED_KEY) === id) {
+      localStorage.removeItem(LIBRARY_SELECTED_KEY);
+      await refreshSelected();
+    }
+  }
+  var currentUrl = null;
+  var currentId = "";
+  function getLibraryUrl() {
+    return currentUrl;
+  }
+  function revoke() {
+    if (currentUrl && currentUrl.startsWith("blob:")) URL.revokeObjectURL(currentUrl);
+    currentUrl = null;
+  }
+  async function refreshSelected() {
+    const id = localStorage.getItem(LIBRARY_SELECTED_KEY) || "";
+    if (!id) {
+      revoke();
+      currentId = "";
+      currentUrl = localStorage.getItem(LEGACY_IMAGE_KEY) || null;
+      window.dispatchEvent(new Event("liquifyBackgroundChange"));
+      return;
+    }
+    if (id === currentId && currentUrl) return;
+    try {
+      const entry = await tx("readonly", (s2) => s2.get(id));
+      revoke();
+      currentId = id;
+      currentUrl = entry?.blob ? URL.createObjectURL(entry.blob) : null;
+    } catch {
+      revoke();
+      currentId = "";
+    }
+    window.dispatchEvent(new Event("liquifyBackgroundChange"));
+  }
+  function selectImage(id) {
+    localStorage.setItem(LIBRARY_SELECTED_KEY, id);
+    void refreshSelected();
+  }
+  function ensureLibraryApplied() {
+    void refreshSelected();
   }
 
   // src/background.ts
@@ -460,21 +1407,87 @@
     return source.startsWith("linear-gradient(") ? source : `url("${source}")`;
   }
   var UNSAMPLEABLE = "liquify:unsampleable";
-  function getCoverUrl() {
-    const raw = Spicetify.Player?.data?.item?.metadata?.image_url;
-    if (!raw) return null;
-    return raw.replace("spotify:image:", "https://i.scdn.co/image/");
+  var IMAGE_SIZE_UPGRADES = {
+    // Album / track art: 64 and 300 → 640.
+    ab67616d00004851: "ab67616d0000b273",
+    ab67616d00001e02: "ab67616d0000b273",
+    // Artist images: 160 and 320 → 640.
+    ab6761610000f178: "ab6761610000e5eb",
+    ab67616100005174: "ab6761610000e5eb",
+    // Playlist mosaics: 300 → 640.
+    ab67706c0000da84: "ab67706c0000bebb"
+  };
+  function upgradeImageSize(url) {
+    return url.replace(/\/image\/([0-9a-f]{16})/i, (whole, code) => {
+      const larger = IMAGE_SIZE_UPGRADES[code.toLowerCase()];
+      return larger ? `/image/${larger}` : whole;
+    });
   }
-  var MAX_SAMPLE_PIXELS = 1e6;
-  function averageColorOf(img) {
+  var COVER_PREFIX_2000 = "ab67616d000082c1";
+  var coverSize = /* @__PURE__ */ new Map();
+  var coverPending = /* @__PURE__ */ new Set();
+  function resolveBigCover(base, big) {
+    if (coverPending.has(base)) return;
+    coverPending.add(base);
+    const probe = new Image();
+    const settle = (url) => {
+      coverPending.delete(base);
+      coverSize.set(base, url);
+      if (base === baseCoverUrlOf(Spicetify.Player?.data?.item)) {
+        window.dispatchEvent(new Event("liquifyBackgroundChange"));
+      }
+    };
+    probe.onload = () => settle(big);
+    probe.onerror = () => settle(base);
+    probe.src = big;
+  }
+  function baseCoverUrlOf(item) {
+    const meta = (item?.contextTrack || item)?.metadata;
+    const raw = meta?.image_xlarge_url || meta?.image_large_url || meta?.image_url || meta?.image_small_url;
+    if (!raw) return null;
+    const url = String(raw).replace("spotify:image:", "https://i.scdn.co/image/");
+    return isHiResCoverOn() ? upgradeImageSize(url) : url;
+  }
+  function bigCoverUrlOf(base) {
+    if (!isHiResCoverOn()) return null;
+    const big = base.replace(/\/image\/ab67616d[0-9a-f]{8}/i, `/image/${COVER_PREFIX_2000}`);
+    return big === base ? null : big;
+  }
+  function getCoverUrl() {
+    const base = baseCoverUrlOf(Spicetify.Player?.data?.item);
+    if (!base) return null;
+    const big = bigCoverUrlOf(base);
+    if (!big) return base;
+    const settled = coverSize.get(base);
+    if (settled) return settled;
+    resolveBigCover(base, big);
+    return null;
+  }
+  function prefetchNeighbourCovers() {
+    const queue = Spicetify.Queue || Spicetify.Platform?.PlayerAPI?._queue || {};
+    const around = [
+      ...(queue.nextTracks || queue.next_tracks || []).slice(0, 2),
+      ...(queue.prevTracks || queue.prev_tracks || []).slice(-1)
+    ];
+    for (const track of around) {
+      const base = baseCoverUrlOf(track);
+      if (!base || coverSize.has(base)) continue;
+      const big = bigCoverUrlOf(base);
+      if (big) resolveBigCover(base, big);
+    }
+  }
+  var MAX_SAMPLE_PIXELS = 128 * 128;
+  async function averageColorOf(img) {
     try {
+      await img.decode().catch(() => {
+      });
       const scale = Math.min(1, Math.sqrt(MAX_SAMPLE_PIXELS / (img.width * img.height)));
       const width = Math.max(1, Math.round(img.width * scale));
       const height = Math.max(1, Math.round(img.height * scale));
       const canvas = document.createElement("canvas");
       canvas.width = width;
       canvas.height = height;
-      const ctx = canvas.getContext("2d");
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
       if (!ctx) return null;
       ctx.drawImage(img, 0, 0, width, height);
       const data = ctx.getImageData(0, 0, width, height).data;
@@ -508,12 +1521,12 @@
     if (/^https?:/i.test(url)) {
       const cors = await loadImage(url, true);
       if (cors) {
-        const color = averageColorOf(cors);
+        const color = await averageColorOf(cors);
         if (color) return color;
       }
     }
     const plain = await loadImage(url, false);
-    return plain ? averageColorOf(plain) : null;
+    return plain ? await averageColorOf(plain) : null;
   }
   function hexToRgbString(hex) {
     const match = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
@@ -536,29 +1549,39 @@
     }
     return null;
   }
-  /* Catppuccin palette (all 4 flavors) – every accent snaps to the nearest
-     official swatch instead of an arbitrary in-between color. */
-  var CATPPUCIN_ACCENTS = [
-    // Mocha
-    "F5E0DC", "F2CDCD", "F5C2E7", "CBA6F7", "F38BA8", "EBA0AC",
-    "FAB387", "F9E2AF", "A6E3A1", "94E2D5", "89DCEB", "74C7EC", "89B4FA", "B4BEFE",
-    // Macchiato
-    "F4DBD6", "F0C6C6", "F5BDE6", "C6A0F6", "ED8796", "EE99A0",
-    "F5A97F", "EED49F", "A6DA95", "8BD5CA", "91D7E3", "7DC4E4", "8AADF4", "B7BDF8",
-    // Frappé
-    "F2D5CF", "EEBEBE", "F4B8E4", "CA9EE6", "E78284", "EA999C",
-    "EF9F76", "E5C890", "A6D189", "81C8BE", "99D1DB", "85C1DC", "8CAAEE", "BABBF1",
-    // Latte
-    "DC8A78", "DD7878", "EA76CB", "8839EF", "D20F39", "E64553",
-    "FE640B", "DF8E1D", "40A02B", "179299", "04A5E5", "209FB5", "1E66F5", "7287FD"
-  ];
-  var CATPPUCIN_NEUTRALS = [
-    // Text / subtext / surface tones (for pairing with an accent)
-    "CDD6F4", "A6ADC8", "9399B2", "585B70", "313244", "1E1E2E", "181825", "11111B",
-    "CAD3F5", "A5ADCB", "939AB7", "5B6078", "363A4F", "24273A", "1E2030", "181926",
-    "C6D0F5", "A5ADCE", "949CBB", "626880", "414559", "303446", "292C3C", "232634",
-    "4C4F69", "6C6F85", "7C7F93", "ACB0BE", "CCD0DA", "EFF1F5", "E6E9EF", "DCE0E8"
-  ];
+  /* Catppuccin palette organized by flavor – each flavor snaps to its own
+     official swatches with contrast-safe pairings. */
+  var CATPPUCCIN_FLAVOR_ACCENTS = {
+    mocha: [
+      "F5E0DC", "F2CDCD", "F5C2E7", "CBA6F7", "F38BA8", "EBA0AC",
+      "FAB387", "F9E2AF", "A6E3A1", "94E2D5", "89DCEB", "74C7EC", "89B4FA", "B4BEFE"
+    ],
+    macchiato: [
+      "F4DBD6", "F0C6C6", "F5BDE6", "C6A0F6", "ED8796", "EE99A0",
+      "F5A97F", "EED49F", "A6DA95", "8BD5CA", "91D7E3", "7DC4E4", "8AADF4", "B7BDF8"
+    ],
+    frappe: [
+      "F2D5CF", "EEBEBE", "F4B8E4", "CA9EE6", "E78284", "EA999C",
+      "EF9F76", "E5C890", "A6D189", "81C8BE", "99D1DB", "85C1DC", "8CAAEE", "BABBF1"
+    ],
+    latte: [
+      "DC8A78", "DD7878", "EA76CB", "8839EF", "D20F39", "E64553",
+      "FE640B", "DF8E1D", "40A02B", "179299", "04A5E5", "209FB5", "1E66F5", "7287FD"
+    ]
+  };
+  var CATPPUCCIN_FLAVOR_NEUTRALS = {
+    mocha: ["CDD6F4", "A6ADC8", "9399B2", "585B70", "313244", "1E1E2E", "181825", "11111B"],
+    macchiato: ["CAD3F5", "A5ADCB", "939AB7", "5B6078", "363A4F", "24273A", "1E2030", "181926"],
+    frappe: ["C6D0F5", "A5ADCE", "949CBB", "626880", "414559", "303446", "292C3C", "232634"],
+    latte: ["4C4F69", "6C6F85", "7C7F93", "ACB0BE", "CCD0DA", "EFF1F5", "E6E9EF", "DCE0E8"]
+  };
+  function getActiveFlavor() {
+    try {
+      return document.documentElement.dataset.liquifyFlavor || localStorage.getItem(COLOR_SCHEME_KEY) || "mocha";
+    } catch {
+      return "mocha";
+    }
+  }
   function parseRgb(rgb) {
     const m2 = /rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(rgb);
     if (!m2) return null;
@@ -578,10 +1601,11 @@
     return (hi + 0.05) / (lo + 0.05);
   }
   function hexToRgb(hex) {
-    return { r: parseInt(hex.slice(0, 2), 16), g2: parseInt(hex.slice(2, 4), 16), b2: parseInt(hex.slice(4, 6), 16) };
+    const clean = hex.replace("#", "");
+    return { r: parseInt(clean.slice(0, 2), 16), g2: parseInt(clean.slice(2, 4), 16), b2: parseInt(clean.slice(4, 6), 16) };
   }
   /* Find the palette swatch with the smallest perceptual distance to the
-     sampled color. Both accent and neutral pools are searched. */
+     sampled color in the active flavor's accent pool. */
   function nearestPaletteColor(rgbStr, pool) {
     const rgb = parseRgb(rgbStr);
     if (!rgb) return null;
@@ -607,13 +1631,15 @@
   }
   /* Pick a secondary color: prefer a neutral swatch with enough contrast
      against the primary (>= 2.5:1), falling back to a far-enough accent. */
-  function pickSecondaryColor(primaryHex) {
+  function pickSecondaryColor(primaryHex, neutrals, accents) {
     const primary = hexToRgb(primaryHex);
     const lp = luminanceOf(primary);
     const onAccent = lp > 0.42 ? hexToRgb("11111B") : hexToRgb("EFF1F5");
+    const neutralPool = neutrals || CATPPUCCIN_FLAVOR_NEUTRALS.mocha;
+    const accentPool = accents || CATPPUCCIN_FLAVOR_ACCENTS.mocha;
     let best = null;
     let bestContrast = 0;
-    for (const hex of CATPPUCIN_NEUTRALS) {
+    for (const hex of neutralPool) {
       const c2 = hexToRgb(hex);
       const ratio = contrastRatio(primary, c2);
       if (ratio > bestContrast) {
@@ -626,7 +1652,7 @@
     }
     let bestAccent = null;
     let bestAccentContrast = 0;
-    for (const hex of CATPPUCIN_ACCENTS) {
+    for (const hex of accentPool) {
       const c2 = hexToRgb(hex);
       const ratio = contrastRatio(primary, c2);
       if (ratio > bestAccentContrast) {
@@ -638,10 +1664,14 @@
     const hexStr = `#${fallback.r.toString(16).padStart(2, "0")}${fallback.g2.toString(16).padStart(2, "0")}${fallback.b2.toString(16).padStart(2, "0")}`.toUpperCase();
     return { hex: hexStr, onAccent };
   }
-  /* Resolve the accent pair for a cover. The dominant color is snapped to the
-     nearest Catppuccin swatch; a secondary color is picked with a guaranteed
-     contrast ratio against it. */
+  /* Resolve the accent pair for a cover, snapped to the active flavor */
   async function resolveAccentPair(sourceUrl, fallbackUrl) {
+    const flavor = getActiveFlavor();
+    const accents = CATPPUCCIN_FLAVOR_ACCENTS[flavor] || CATPPUCCIN_FLAVOR_ACCENTS.mocha;
+    const neutrals = CATPPUCCIN_FLAVOR_NEUTRALS[flavor] || CATPPUCCIN_FLAVOR_NEUTRALS.mocha;
+    const defaultMauveHex = (COLOR_PALETTES[flavor]?.button || "CBA6F7");
+    const defaultMauve = `#${defaultMauveHex}`;
+
     let sampled = null;
     const direct = await getDominantColor(sourceUrl);
     if (direct) sampled = direct;
@@ -653,12 +1683,18 @@
       const palette = await getPaletteColor(Spicetify.Player?.data?.item?.uri ?? null);
       if (palette) sampled = palette;
     }
-    const primary = nearestPaletteColor(sampled || FALLBACK_COLOR, CATPPUCIN_ACCENTS) || FALLBACK_COLOR;
-    const secondary = pickSecondaryColor(primary.replace("#", ""));
+    const primary = nearestPaletteColor(sampled || defaultMauve, accents) || defaultMauve;
+    const secondary = pickSecondaryColor(primary.replace("#", ""), neutrals, accents);
     return { primary, secondary: secondary.hex, onAccent: secondary.onAccent };
   }
-  function cssRgb(hex) {
-    const c2 = hexToRgb(hex.replace("#", ""));
+  /* Safely converts both { r, g2, b2 } objects and hex strings to CSS rgb() */
+  function cssRgb(val) {
+    if (!val) return "rgb(0,0,0)";
+    if (typeof val === "object" && val !== null && "r" in val && "g2" in val && "b2" in val) {
+      return `rgb(${val.r},${val.g2},${val.b2})`;
+    }
+    const cleanHex = String(val).replace("#", "");
+    const c2 = hexToRgb(cleanHex);
     return `rgb(${c2.r},${c2.g2},${c2.b2})`;
   }
   function readAccentBoosts() {
@@ -668,20 +1704,28 @@
     };
   }
   async function applyAccent(sourceUrl, fallbackUrl) {
-    const pair = sourceUrl === UNSAMPLEABLE ? { primary: FALLBACK_COLOR, secondary: "#B4BEFE", onAccent: hexToRgb("11111B") } : await resolveAccentPair(sourceUrl, fallbackUrl);
+    const flavor = getActiveFlavor();
+    const defaultMauve = "#" + (COLOR_PALETTES[flavor]?.button || "CBA6F7");
+    const defaultSecondary = "#" + (COLOR_PALETTES[flavor]?.lavender || "B4BEFE");
+    const defaultOnAccent = flavor === "latte" ? hexToRgb("EFF1F5") : hexToRgb("11111B");
+
+    const pair = sourceUrl === UNSAMPLEABLE
+      ? { primary: defaultMauve, secondary: defaultSecondary, onAccent: defaultOnAccent }
+      : await resolveAccentPair(sourceUrl, fallbackUrl);
+
     document.documentElement.style.setProperty("--accent-color", pair.primary);
     document.documentElement.style.setProperty("--accent-color-secondary", cssRgb(pair.secondary));
     document.documentElement.style.setProperty("--accent-on-accent", cssRgb(pair.onAccent));
     window.dispatchEvent(new Event("liquifyAccentColorReady"));
   }
-  var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  var sleep2 = (ms) => new Promise((r) => setTimeout(r, ms));
   async function waitFor(get, timeoutMs) {
     const start2 = Date.now();
     for (; ; ) {
       const value = get();
       if (value) return value;
       if (Date.now() - start2 >= timeoutMs) return null;
-      await sleep(300);
+      await sleep2(300);
     }
   }
   async function startBackground() {
@@ -692,6 +1736,9 @@
     layerA.classList.add("liquify-bg-layer", "layer-a");
     layerB.classList.add("liquify-bg-layer", "layer-b");
     root.prepend(layerA, layerB);
+    const kawarp = new KawarpBackdrop();
+    root.prepend(kawarp.el);
+    applyKawarpAppearance();
     const animatedContainer = document.createElement("div");
     animatedContainer.classList.add("liquify-animated-bg");
     const animatedTilesA = [];
@@ -709,6 +1756,11 @@
       animatedTilesB.push(tile);
     }
     root.prepend(animatedContainer);
+    const hideTiles = () => {
+      animatedContainer.classList.remove("active");
+      animatedTilesA.forEach((tile) => tile.classList.remove("active"));
+      animatedTilesB.forEach((tile) => tile.classList.remove("active"));
+    };
     let useAnimatedA = true;
     let useA = true;
     let lastAccentUrl = null;
@@ -721,19 +1773,22 @@
       return d2.context?.uri || d2.contextUri || d2.context_uri || state.context?.uri || state.contextUri || state.context_uri || "";
     }
     window.liquifyContextDebug = async () => {
-      const cover = getCoverUrl();
+      const cover2 = getCoverUrl();
       return {
         uri: getContextUri(),
         context: Spicetify.Player?.data?.context,
         rawCoverUrl: Spicetify.Player?.data?.item?.metadata?.image_url ?? null,
-        coverUrl: cover,
-        coverSampledColor: await getDominantColor(cover),
+        coverUrl: cover2,
+        coverSampledColor: await getDominantColor(cover2),
         paletteColor: await getPaletteColor(Spicetify.Player?.data?.item?.uri ?? null),
         accentSource: localStorage.getItem("liquify-accent-source") || "background"
       };
     };
     async function fetchPlaylistCover(uri) {
-      const norm = (s2) => String(s2).replace("spotify:image:", "https://i.scdn.co/image/");
+      const norm = (s2) => {
+        const url = String(s2).replace("spotify:image:", "https://i.scdn.co/image/");
+        return isHiResCoverOn() ? upgradeImageSize(url) : url;
+      };
       try {
         const meta = await Spicetify.Platform?.PlaylistAPI?.getMetadata?.(uri);
         const img = meta?.images?.[0]?.url || meta?.picture || meta?.image;
@@ -765,11 +1820,21 @@
       }
       return null;
     }
-    function render(kind, image) {
+    function render(kind, image, url) {
       if (!image) return;
-      const key = `${kind}|${image}`;
+      const engine = getBgEngine();
+      const key = `${kind}|${engine}|${image}`;
       if (key === lastRenderKey) return;
       lastRenderKey = key;
+      if (kind === "animated" && engine === "kawarp" && url) {
+        layerA.classList.remove("active");
+        layerB.classList.remove("active");
+        hideTiles();
+        kawarp.setActive(true);
+        kawarp.show(url);
+        return;
+      }
+      kawarp.setActive(false);
       if (kind === "animated") {
         layerA.classList.remove("active");
         layerB.classList.remove("active");
@@ -782,42 +1847,43 @@
         });
         offTiles.forEach((tile) => tile.classList.remove("active"));
         useAnimatedA = !useAnimatedA;
-      } else {
-        animatedContainer.classList.remove("active");
-        animatedTilesA.forEach((tile) => tile.classList.remove("active"));
-        animatedTilesB.forEach((tile) => tile.classList.remove("active"));
-        if (useA) {
-          layerA.style.backgroundImage = image;
-          layerA.classList.add("active");
-          layerB.classList.remove("active");
-        } else {
-          layerB.style.backgroundImage = image;
-          layerB.classList.add("active");
-          layerA.classList.remove("active");
-        }
-        useA = !useA;
+        return;
       }
+      hideTiles();
+      if (useA) {
+        layerA.style.backgroundImage = image;
+        layerA.classList.add("active");
+        layerB.classList.remove("active");
+      } else {
+        layerB.style.backgroundImage = image;
+        layerB.classList.add("active");
+        layerA.classList.remove("active");
+      }
+      useA = !useA;
     }
     function resolveBackdrop() {
       const bgMode = localStorage.getItem("liquify-bg-mode") || "dynamic";
-      const customImage = localStorage.getItem("liquify-bg-image");
+      const customImage = getLibraryUrl();
       const bgUrl = localStorage.getItem("liquify-bg-url");
       const customAnimated = localStorage.getItem("liquify-bg-custom-animated") === "on";
       const customKind = customAnimated ? "animated" : "static";
       const coverUrl = getCoverUrl();
-      const from = (kind, url) => ({ kind, image: url ? cssImage(url) : null, sampleUrl: url });
+      const from = (kind, url) => ({ kind, image: url ? cssImage(url) : null, url, sampleUrl: url });
       let result;
       if (bgMode === "custom" && customImage) result = from(customKind, customImage);
       else if (bgMode === "url" && bgUrl) {
-        result = { kind: customKind, image: cssImage(bgUrl), sampleUrl: UNSAMPLEABLE };
+        result = { kind: customKind, image: cssImage(bgUrl), url: bgUrl, sampleUrl: UNSAMPLEABLE };
       } else if (bgMode === "playlist") {
         const playlistCover = getResolvedContextCover();
         const isPlaylist = getContextUri().includes(":playlist:");
         result = from(customKind, isPlaylist ? playlistCover : playlistCover || coverUrl);
       } else if (bgMode === "animated") result = from("animated", coverUrl);
       else result = from("static", coverUrl);
+      if (result.kind === "animated" && getBgEngine() === "kawarp" && !kawarp.canRender(result.url)) {
+        result = { ...result, kind: "static" };
+      }
       if (!result.image && lastRenderKey === null) {
-        return { kind: "static", image: EMPTY_BACKDROP, sampleUrl: null };
+        return { kind: "static", image: EMPTY_BACKDROP, url: null, sampleUrl: null };
       }
       return result;
     }
@@ -828,8 +1894,8 @@
       return sampleUrl || getCoverUrl();
     }
     async function updateBackgroundAndAccent() {
-      const { kind, image, sampleUrl } = resolveBackdrop();
-      render(kind, image);
+      const { kind, image, url, sampleUrl } = resolveBackdrop();
+      render(kind, image, url);
       const accentUrl = accentSourceOf(sampleUrl);
       if (accentUrl && accentUrl !== lastAccentUrl) {
         lastAccentUrl = accentUrl;
@@ -844,22 +1910,31 @@
     }
     updateBackgroundAndAccent();
     window.addEventListener("liquifyBackgroundChange", updateBackgroundAndAccent);
+    window.addEventListener("liquifyBackgroundChange", () => {
+      applyKawarpAppearance();
+      kawarp.applyOptions();
+    });
     window.addEventListener("liquifyAccentColorParamsChange", updateAccentOnly);
     waitFor(
       () => typeof Spicetify?.Player?.addEventListener === "function" ? Spicetify.Player : null,
       3e4
     ).then((player) => {
       try {
-        player?.addEventListener("songchange", updateBackgroundAndAccent);
+        player?.addEventListener("songchange", () => {
+          updateBackgroundAndAccent();
+          prefetchNeighbourCovers();
+        });
       } catch {
       }
+      prefetchNeighbourCovers();
     });
     setInterval(updateBackgroundAndAccent, 500);
+    setInterval(prefetchNeighbourCovers, 2e3);
   }
 
   // src/popupBounce.ts
   var STORAGE_KEY = "liquify-popup-bounce";
-  var STYLE_ID = "liquify-popup-bounce-style";
+  var STYLE_ID2 = "liquify-popup-bounce-style";
   var START_SCALE = 0.86;
   var ENTER_DURATION_MS = 240;
   var ENTER_EASING = "cubic-bezier(0.34, 1.7, 0.64, 1)";
@@ -870,11 +1945,17 @@
   var START_CLASS = "liquify-popup-bounce--start";
   var RUN_CLASS = "liquify-popup-bounce--run";
   var CLONE_CLASS = "liquify-popup-clone";
-  var POPUP_SELECTOR = ".main-contextMenu-menu, .NJh1B8rnlSUlK7sY, .xamNkt5LX9o8aL1q";
+  var POPUP_SELECTOR = ".l1Ov7CMEDnAqk63BPZvI, .WwpyuVjaoJUdGwq5SfNQ, .ViRU4WGs4wlDqn0wUPay, .NJh1B8rnlSUlK7sY, .xamNkt5LX9o8aL1q";
+  var SIZE_CONTAINED = "[data-scroll-size-contained]";
+  function isInsideContained(node) {
+    const el = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+    const contained = el?.closest(SIZE_CONTAINED);
+    return !!contained && contained !== el;
+  }
   function ensureStyle() {
-    if (document.getElementById(STYLE_ID)) return;
+    if (document.getElementById(STYLE_ID2)) return;
     const style = document.createElement("style");
-    style.id = STYLE_ID;
+    style.id = STYLE_ID2;
     style.textContent = `.${BASE_CLASS}{transform-origin:top center;will-change:transform;}.${START_CLASS}{transform:scale(${START_SCALE});}.${RUN_CLASS}{transform:scale(1);transition:transform ${ENTER_DURATION_MS}ms ${ENTER_EASING};}`;
     document.head.appendChild(style);
   }
@@ -886,6 +1967,7 @@
     });
     const enterCleanups = /* @__PURE__ */ new WeakMap();
     const lastRect = /* @__PURE__ */ new WeakMap();
+    const lastBackground = /* @__PURE__ */ new WeakMap();
     function bounceIn(el, triggerBtn) {
       if (!el || !enabled) return;
       if (triggerBtn?.id === "liquify-settings-btn") return;
@@ -911,9 +1993,7 @@
       if (!rect || rect.width === 0 || rect.height === 0) return;
       const clone = el.cloneNode(true);
       clone.classList.add(CLONE_CLASS);
-      const wasBefore = clone.classList.contains("liquify-glass--before");
-      clone.classList.remove(BASE_CLASS, START_CLASS, RUN_CLASS, "liquify-glass", "liquify-glass--svg", "liquify-glass--simple", "liquify-glass--before");
-      clone.removeAttribute("data-liquify");
+      clone.classList.remove(BASE_CLASS, START_CLASS, RUN_CLASS);
       const s2 = clone.style;
       s2.position = "fixed";
       s2.left = `${rect.left}px`;
@@ -926,13 +2006,9 @@
       s2.transformOrigin = "top center";
       s2.transform = "translateY(0) scale(1)";
       s2.opacity = "1";
+      const background = lastBackground.get(el);
+      if (background) s2.backgroundColor = background;
       document.body.appendChild(clone);
-      const radius = parseFloat(getComputedStyle(clone).borderTopLeftRadius) || 20;
-      const surface = new GlassSurface(clone, {
-        borderRadius: radius,
-        glassBlur: "5px",
-        applyTo: wasBefore ? "before" : "element"
-      });
       requestAnimationFrame(() => {
         s2.transition = `transform ${EXIT_DURATION_MS}ms ${EXIT_EASING}, opacity ${EXIT_FADE_MS}ms ease-in`;
         s2.transform = "translateY(8px) scale(0.95)";
@@ -941,7 +2017,6 @@
       const remove = () => {
         clone.removeEventListener("transitionend", remove);
         window.clearTimeout(timer);
-        surface.destroy();
         clone.remove();
       };
       const timer = window.setTimeout(remove, EXIT_DURATION_MS + 150);
@@ -962,6 +2037,7 @@
         const now = isVisible(el);
         if (now) {
           lastRect.set(el, el.getBoundingClientRect());
+          lastBackground.set(el, getComputedStyle(el).backgroundColor);
           if (!was) bounceIn(el);
         }
         prevVisible.set(el, now);
@@ -974,9 +2050,21 @@
         if (!p2.classList.contains(CLONE_CLASS)) out.add(p2);
       });
     }
+    let scanQueued = false;
+    function queueScan() {
+      if (scanQueued) return;
+      scanQueued = true;
+      requestAnimationFrame(() => {
+        scanQueued = false;
+        scanPopups();
+      });
+    }
     const mo = new MutationObserver((mutations) => {
       const removedPopups = /* @__PURE__ */ new Set();
+      let relevant = false;
       for (const m2 of mutations) {
+        if (m2.type === "attributes" && m2.attributeName !== "aria-expanded" && isInsideContained(m2.target)) continue;
+        relevant = true;
         if (m2.attributeName === "aria-expanded") {
           const btn = m2.target;
           const now = btn.getAttribute("aria-expanded");
@@ -990,7 +2078,7 @@
         m2.removedNodes.forEach((node) => collectRemovedPopups(node, removedPopups));
       }
       for (const popup of removedPopups) fadeOutClone(popup);
-      requestAnimationFrame(scanPopups);
+      if (relevant) queueScan();
     });
     mo.observe(document.body, {
       subtree: true,
@@ -1004,53 +2092,11 @@
     scanPopups();
   }
 
-  // src/settings/shared.ts
-  function clamp(n, min, max) {
-    return Math.min(max, Math.max(min, n));
-  }
-  function sleep2(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-  function readLS(key, fallback) {
-    const value = localStorage.getItem(key);
-    return value === null || value === "" ? fallback : value;
-  }
-  function readNum(key, fallback) {
-    const raw = localStorage.getItem(key);
-    const parsed = raw === null ? NaN : parseInt(raw, 10);
-    return Number.isFinite(parsed) ? parsed : fallback;
-  }
-  function ensureStyleTag(id) {
-    let style = document.getElementById(id);
-    if (!style) {
-      style = document.createElement("style");
-      style.id = id;
-      document.head.appendChild(style);
-    }
-    return style;
-  }
-  function updateStyle(id, css) {
-    ensureStyleTag(id).textContent = css;
-  }
-  function hasMountedCanvasMedia(el) {
-    if (!el) return false;
-    if (el.querySelector("video")) return true;
-    const img = el.querySelector("img");
-    return !!img && !!img.getAttribute("src");
-  }
-  function getOsName() {
-    return (Spicetify?.Platform?.PlatformData?.os_name || navigator.platform || "").toString().toLowerCase();
-  }
-  function isUnixLikeOS() {
-    const os = getOsName();
-    return os.includes("linux") || os.includes("mac") || os.includes("darwin") || os.includes("osx") || os.includes("macos");
-  }
-
   // src/settings/runtime/reactRuntime.ts
   var React;
   var ReactDOM;
   async function awaitSpicetifyReact() {
-    while (!Spicetify?.React || !Spicetify?.ReactDOM) await sleep2(200);
+    while (!Spicetify?.React || !Spicetify?.ReactDOM) await sleep(200);
     React = Spicetify.React;
     ReactDOM = Spicetify.ReactDOM;
   }
@@ -1060,7 +2106,7 @@
       const p2 = Spicetify?.Player;
       return !!p2 && typeof p2.next === "function" && typeof p2.back === "function" && typeof p2.addEventListener === "function";
     };
-    while (!ready() && Date.now() - start2 < timeoutMs) await sleep2(200);
+    while (!ready() && Date.now() - start2 < timeoutMs) await sleep(200);
   }
 
   // src/settings/i18n/translations.ts
@@ -1069,17 +2115,41 @@
     title: "Liquify Settings",
     close: "Close",
     chooseFile: "Choose file",
+    openLibrary: "Image Library",
+    imageLibrary: "Image Library",
+    addImages: "Add images",
+    libraryEmpty: "No images yet. Add some to get started.",
+    removeImage: "Remove",
     enterUrl: "Enter image URL...",
     resetAllSettings: "Reset all Settings",
     searchPlaceholder: "Search settings...",
+    language: "Language:",
+    languageChoice: "Choose Language:",
+    languageOptions: { auto: "Follow Spotify" },
     accentColor: "Color Theme:",
     accentSource: "Color Source:",
     accentSatBoost: "Saturation Boost:",
     accentLightBoost: "Brightness Boost:",
     background: "Background:",
+    hiResCover: "Use hi-res pictures:",
     backgroundBlur: "Background Blur (px):",
     animatedBackground: "Animated Background:",
     backgroundBrightness: "Background Brightness (%):",
+    animatedEngine: "Engine:",
+    vinyl: {
+      npv: "Vinyl in Sidebar:",
+      playbar: "Vinyl in Playbar:",
+      cinema: "Vinyl in Cinema View:",
+      miniPlayer: "Vinyl in Mini Player:",
+      speed: "Seconds Per Turn:"
+    },
+    kawarp: {
+      warp: "Warp Intensity (%):",
+      speed: "Animation Speed (%):",
+      saturation: "Saturation (%):",
+      scale: "Scale (%):",
+      contrast: "Contrast (%):"
+    },
     apbackground: "Artist Page Background:",
     artistScrollBlur: "Artist Scroll Blur (px):",
     artistScrollBrightness: "Artist Scroll Brightness (%):",
@@ -1100,7 +2170,7 @@
     actionBarBox: "Action Bar Box:",
     lyricsMode: "Lyrics Translation/Romanization:",
     themedLyrics: "Themed Lyrics:",
-    lyricsFontSize: "Lyrics Font Size (px):",
+    lyricsFontSize: "Lyrics Font Size (%):",
     lyricsMargin: "Lyrics Margin (px):",
     transparentWidth: "Window Controls Width (px):",
     transparentHeight: "Window Controls Height (px):",
@@ -1110,6 +2180,7 @@
       help: "Help"
     },
     sections: {
+      language: "Language",
       accent: "Colors",
       background: "Background",
       artist: "Artist",
@@ -1132,7 +2203,11 @@
       coverArt: "Cover Art",
       modes: "Modes",
       styling: "Styling",
-      translation: "Translation"
+      translation: "Translation",
+      kawarp: "Animated Background",
+      sidebars: "Sidebars",
+      typography: "Typography",
+      vinyl: "Vinyl Cover Art"
     },
     config: {
       hint: "Copy your current Liquify config to back it up or share it, or paste one in and apply it. Custom background images aren't included.",
@@ -1157,7 +2232,9 @@
       off: "Off",
       url: "URL",
       backgroundSource: "Background",
-      songCover: "Song Cover"
+      songCover: "Song Cover",
+      engineKawarp: "Kawarp (WebGL)",
+      engineTiles: "Classic"
     },
     ui: {
       performanceMode: "Performance Mode:",
@@ -1167,7 +2244,14 @@
       backdropBlur: "Backdrop Blur (px):",
       leftSidebarRadius: "Left Sidebar Border Radius (px):",
       mainViewRadius: "Main View Border Radius (px):",
-      rightSidebarRadius: "Right Sidebar Border Radius (px):"
+      rightSidebarRadius: "Right Sidebar Border Radius (px):",
+      leftSidebarBlur: "Blur Behind Left Sidebar:",
+      leftSidebarBlurAmount: "Left Sidebar Blur (px):",
+      bodyFont: "Body Font:",
+      headingFont: "Heading Font:",
+      rightSidebarBlur: "Blur Behind Right Sidebar:",
+      rightSidebarBlurAmount: "Right Sidebar Blur (px):",
+      localFilesTransparent: "Transparent Local Files Card:"
     },
     canvasCoverArt: {
       mode: "Track Name Cover Art:",
@@ -1215,11 +2299,18 @@
       accentLightBoost: "How much to brighten the accent taken from the cover art (Dynamic mode only).",
       background: "Dynamic = blurred current cover, Animated = moving gradient, Playlist = the playlist's image, Custom = your own image, URL = an image link.",
       animatedBackground: "Subtly animates the custom, URL or playlist background.",
+      hiResCover: "Loads the largest cover the CDN has, so the backdrop stays sharp on a large window. Turn it off to load pictures faster and avoid the delay on a track change.",
       artistBackground: "What to show behind artist pages: the theme default, nothing, your own image, or an image URL.",
       artistScrollBlur: "Blur of the artist header image as you scroll down the page.",
       artistScrollBrightness: "Brightness of the artist header image as you scroll down the page.",
       performanceMode: "Turns off the SVG liquid-glass refraction and uses a plain blur instead - lighter on the GPU.",
+      language: "Follow Spotify uses whatever language the app is set to; Custom pins the panel to one you pick.",
+      vinyl: "Turns the cover art into a spinning record. It holds its angle while playback is paused.",
       glassBlur: "Backdrop blur strength behind the liquid-glass surfaces.",
+      bodyFont: "Replaces Spotify's typeface everywhere except headings and titles.",
+      headingFont: "Replaces the typeface of headlines and titles only.",
+      sidebarBlur: "Blurs the background showing through the left and right sidebars.",
+      localFilesTransparent: "Clears the solid fill behind the Local Files entry in the library list.",
       popupBounce: "Spring / bounce animation when popups and menus open.",
       newHomescreenLayout: "Boxes the home sections in glass cards and tidies up the card grid heights.",
       playerWidth: "Default = Spotify's width, Theme = Liquify's width, Custom = set it yourself below.",
@@ -1265,17 +2356,29 @@
       title: "Liquify Einstellungen",
       close: "Schlie\xDFen",
       chooseFile: "Datei w\xE4hlen",
+      openLibrary: "Bildbibliothek",
+      imageLibrary: "Bildbibliothek",
+      addImages: "Bilder hinzuf\xFCgen",
+      libraryEmpty: "Noch keine Bilder. F\xFCge welche hinzu, um zu starten.",
+      removeImage: "Entfernen",
       enterUrl: "Bild-URL eingeben...",
       resetAllSettings: "Alle Einstellungen zur\xFCcksetzen",
       searchPlaceholder: "Einstellungen suchen...",
+      language: "Sprache:",
+      languageChoice: "Sprache w\xE4hlen:",
+      languageOptions: { auto: "Spotify folgen" },
       accentColor: "Farbschema:",
       accentSource: "Farbquelle:",
       accentSatBoost: "S\xE4ttigungs-Boost:",
       accentLightBoost: "Helligkeits-Boost:",
       background: "Hintergrund:",
+      hiResCover: "Hi-Res-Bilder verwenden:",
       backgroundBlur: "Hintergrundunsch\xE4rfe (px):",
       animatedBackground: "Animierter Hintergrund:",
       backgroundBrightness: "Hintergrundhelligkeit (%):",
+      animatedEngine: "Engine:",
+      vinyl: { npv: "Vinyl in Seitenleiste:", playbar: "Vinyl in Playbar:", cinema: "Vinyl im Cinema-Modus:", miniPlayer: "Vinyl im Mini-Player:", speed: "Sekunden pro Umdrehung:" },
+      kawarp: { warp: "Verzerrungsst\xE4rke (%):", speed: "Animationsgeschwindigkeit (%):", saturation: "S\xE4ttigung (%):", scale: "Skalierung (%):", contrast: "Kontrast (%):" },
       apbackground: "K\xFCnstlerseiten-Hintergrund:",
       artistScrollBlur: "K\xFCnstler-Scroll-Unsch\xE4rfe (px):",
       artistScrollBrightness: "K\xFCnstler-Scroll-Helligkeit (%):",
@@ -1296,27 +2399,34 @@
       actionBarBox: "Aktionsleisten-Box:",
       lyricsMode: "Songtext-\xDCbersetzung/Romanisierung:",
       themedLyrics: "Thematisierte Songtexte:",
-      lyricsFontSize: "Songtext-Schriftgr\xF6\xDFe (px):",
+      lyricsFontSize: "Songtext-Schriftgr\xF6\xDFe (%):",
       lyricsMargin: "Songtext-Abstand (px):",
       transparentWidth: "Fenstersteuerungs-Breite (px):",
       transparentHeight: "Fenstersteuerungs-H\xF6he (px):",
       aria: { scrollSectionsLeft: "Sektionen nach links scrollen", scrollSectionsRight: "Sektionen nach rechts scrollen", help: "Hilfe" },
-      sections: { accent: "Farben", background: "Hintergrund", artist: "K\xFCnstler", ui: "UI", player: "Player", nextSongCard: "N\xE4chster Song", canvasCoverArt: "Canvas Cover Art", playlist: "Playlist", lyrics: "Songtexte", transparent: "Fenstersteuerung", config: "Konfig" },
-      subSections: { performanceGlass: "Performance & Glass", animations: "Animationen", homescreen: "Startseite", borderRadius: "Rundungen", sizeShape: "Gr\xF6\xDFe & Form", progressVolume: "Fortschritts- & Lautst\xE4rkeleiste", coverArt: "Cover-Art", modes: "Modi", styling: "Styling", translation: "\xDCbersetzung" },
+      sections: { language: "Sprache", accent: "Farben", background: "Hintergrund", artist: "K\xFCnstler", ui: "UI", player: "Player", nextSongCard: "N\xE4chster Song", canvasCoverArt: "Canvas Cover Art", playlist: "Playlist", lyrics: "Songtexte", transparent: "Fenstersteuerung", config: "Konfig" },
+      subSections: { performanceGlass: "Performance & Glass", animations: "Animationen", homescreen: "Startseite", borderRadius: "Rundungen", sizeShape: "Gr\xF6\xDFe & Form", progressVolume: "Fortschritts- & Lautst\xE4rkeleiste", coverArt: "Cover-Art", modes: "Modi", styling: "Styling", translation: "\xDCbersetzung", kawarp: "Animierter Hintergrund", sidebars: "Seitenleisten", typography: "Typografie", vinyl: "Vinyl Cover Art" },
       config: { hint: "Kopiere deine aktuelle Liquify-Konfiguration zum Sichern oder Teilen, oder f\xFCge eine ein und wende sie an. Eigene Hintergrundbilder sind nicht enthalten.", copy: "Kopieren", reload: "Aktuelle laden", apply: "Einf\xFCgen & Anwenden", copied: "In die Zwischenablage kopiert.", copyFailed: "Kopieren fehlgeschlagen - markiere den Text und kopiere ihn manuell.", invalid: "Ung\xFCltige Konfiguration." },
-      dropdown: { default: "Standard", custom: "Benutzerdefiniert", dynamic: "Dynamisch", animated: "Animiert", playlist: "Playlist", theme: "Theme", none: "Keine", show: "Anzeigen", hide: "Ausblenden", on: "An", off: "Aus", url: "URL", backgroundSource: "Hintergrund", songCover: "Song-Cover" },
-      ui: { performanceMode: "Performance-Modus:", popupBounce: "Popup-Bounce:", newHomescreenLayout: "Neues Startseiten-Layout verwenden:", glassBlur: "Glass-Unsch\xE4rfe (px):", backdropBlur: "Backdrop-Unsch\xE4rfe (px):", leftSidebarRadius: "Rundung der linken Seitenleiste (px):", mainViewRadius: "Rundung der Hauptansicht (px):", rightSidebarRadius: "Rundung der rechten Seitenleiste (px):" },
+      dropdown: { default: "Standard", custom: "Benutzerdefiniert", dynamic: "Dynamisch", animated: "Animiert", playlist: "Playlist", theme: "Theme", none: "Keine", show: "Anzeigen", hide: "Ausblenden", on: "An", off: "Aus", url: "URL", backgroundSource: "Hintergrund", songCover: "Song-Cover", engineKawarp: "Kawarp (WebGL)", engineTiles: "Klassisch" },
+      ui: { performanceMode: "Performance-Modus:", popupBounce: "Popup-Bounce:", newHomescreenLayout: "Neues Startseiten-Layout verwenden:", glassBlur: "Glass-Unsch\xE4rfe (px):", backdropBlur: "Backdrop-Unsch\xE4rfe (px):", leftSidebarRadius: "Rundung der linken Seitenleiste (px):", mainViewRadius: "Rundung der Hauptansicht (px):", rightSidebarRadius: "Rundung der rechten Seitenleiste (px):", leftSidebarBlur: "Hinter linker Seitenleiste weichzeichnen:", leftSidebarBlurAmount: "Unsch\xE4rfe linke Seitenleiste (px):", bodyFont: "Flie\xDFtext-Schrift:", headingFont: "\xDCberschriften-Schrift:", rightSidebarBlur: "Hinter rechter Seitenleiste weichzeichnen:", rightSidebarBlurAmount: "Unsch\xE4rfe rechte Seitenleiste (px):", localFilesTransparent: "Lokale Dateien transparent:" },
       canvasCoverArt: { mode: "Cover-Art beim Tracknamen:", off: "Aus", trackInfo: "Neben Track-Info", outsideTrackInfo: "Au\xDFerhalb der Track-Info", overCanvas: "\xDCber Canvas", showAlways: "Immer anzeigen:", yes: "Ja", no: "Nein", blur: "Unsch\xE4rfe (px):" },
       comfyCoverArt: { enabled: "Comfy Cover Art:", width: "Breite (px):", height: "H\xF6he (px):", marginBottom: "Unterer Abstand (px):", marginLeft: "Linker Abstand (px):" },
       nextSongCard: { show: "N\xE4chste-Song-Karte anzeigen:", position: "Horizontale Position", cardHeight: "Kartenh\xF6he (px):", cardMaxWidth: "Max. Kartenbreite (px):", gap: "Abstand zwischen Bild und Text (px):", coverSize: "Cover-Gr\xF6\xDFe (px):", hPad: "Horizontaler Innenabstand (px):", vPad: "Vertikaler Innenabstand (px):", gapToPlayer: "Abstand zum Player (px):", borderRadius: "Rundung (px):", coverBorderRadius: "Cover-Rundung (px):", left: "Links", right: "Rechts" },
       lyricsOptions: { off: "Aus", translation: "Nur \xDCbersetzung", romanization: "Nur Romanisierung", both: "\xDCbersetzung + Romanisierung" },
       tooltips: {
+        language: '\u201ESpotify folgen" \xFCbernimmt die Sprache der App; \u201EBenutzerdefiniert" legt das Panel auf eine feste Sprache.',
         accentColor: "Standard nutzt Spotifys Gr\xFCn, Benutzerdefiniert eine feste Farbe, Dynamisch passt den Akzent an das aktuelle Cover an.",
         accentSource: "Woher die dynamischen Farben kommen: vom aktuell angezeigten Hintergrund (Playlist, eigenes Bild oder URL) oder immer vom Song-Cover.",
         accentSatBoost: "Wie stark Farben aus dem Cover intensiviert werden (nur dynamischer Modus).",
         accentLightBoost: "Wie stark der Akzent aus dem Cover aufgehellt wird (nur dynamischer Modus).",
         background: "Dynamisch = verschwommenes aktuelles Cover, Animiert = bewegter Verlauf, Playlist = Playlist-Bild, Benutzerdefiniert = eigenes Bild, URL = Bildlink.",
         animatedBackground: "Animiert benutzerdefinierte, URL- oder Playlist-Hintergr\xFCnde dezent.",
+        hiResCover: "L\xE4dt das gr\xF6\xDFte verf\xFCgbare Cover, damit der Hintergrund auch im gro\xDFen Fenster scharf bleibt. Deaktivieren, damit Bilder schneller laden und die Verz\xF6gerung beim Songwechsel entf\xE4llt.",
+        bodyFont: "Ersetzt Spotifys Schriftart \xFCberall au\xDFer bei \xDCberschriften und Titeln.",
+        headingFont: "Ersetzt die Schriftart nur bei \xDCberschriften und Titeln.",
+        vinyl: "Macht aus dem Cover eine drehende Schallplatte. Bei pausierter Wiedergabe beh\xE4lt sie ihren Winkel.",
+        sidebarBlur: "Zeichnet den Hintergrund weich, der durch die linke und rechte Seitenleiste scheint.",
+        localFilesTransparent: 'Entfernt die gef\xFCllte Fl\xE4che hinter dem Eintrag \u201ELokale Dateien" in der Bibliothek.',
         artistBackground: "Was hinter K\xFCnstlerseiten angezeigt wird: Theme-Standard, nichts, eigenes Bild oder Bild-URL.",
         artistScrollBlur: "Unsch\xE4rfe des K\xFCnstler-Headerbilds beim Scrollen nach unten.",
         artistScrollBrightness: "Helligkeit des K\xFCnstler-Headerbilds beim Scrollen nach unten.",
@@ -1379,7 +2489,7 @@
       actionBarBox: "\u0411\u043B\u043E\u043A \u043F\u0430\u043D\u0435\u043B\u0438 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0439:",
       lyricsMode: "\u041F\u0435\u0440\u0435\u0432\u043E\u0434/\u0440\u043E\u043C\u0430\u043D\u0438\u0437\u0430\u0446\u0438\u044F \u0442\u0435\u043A\u0441\u0442\u0430:",
       themedLyrics: "\u0422\u0435\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438\u0435 \u0442\u0435\u043A\u0441\u0442\u044B:",
-      lyricsFontSize: "\u0420\u0430\u0437\u043C\u0435\u0440 \u0448\u0440\u0438\u0444\u0442\u0430 \u0442\u0435\u043A\u0441\u0442\u0430 (px):",
+      lyricsFontSize: "\u0420\u0430\u0437\u043C\u0435\u0440 \u0448\u0440\u0438\u0444\u0442\u0430 \u0442\u0435\u043A\u0441\u0442\u0430 (%):",
       lyricsMargin: "\u041E\u0442\u0441\u0442\u0443\u043F \u0442\u0435\u043A\u0441\u0442\u0430 (px):",
       transparentWidth: "\u0428\u0438\u0440\u0438\u043D\u0430 \u044D\u043B\u0435\u043C\u0435\u043D\u0442\u043E\u0432 \u043E\u043A\u043D\u0430 (px):",
       transparentHeight: "\u0412\u044B\u0441\u043E\u0442\u0430 \u044D\u043B\u0435\u043C\u0435\u043D\u0442\u043E\u0432 \u043E\u043A\u043D\u0430 (px):",
@@ -1462,7 +2572,7 @@
       actionBarBox: "Caja de barra de acciones:",
       lyricsMode: "Traducci\xF3n/Romanizaci\xF3n de letras:",
       themedLyrics: "Letras tematizadas:",
-      lyricsFontSize: "Tama\xF1o de letra (px):",
+      lyricsFontSize: "Tama\xF1o de letra (%):",
       lyricsMargin: "Margen de letras (px):",
       transparentWidth: "Ancho de controles de ventana (px):",
       transparentHeight: "Alto de controles de ventana (px):",
@@ -1545,7 +2655,7 @@
       actionBarBox: "Caixa da barra de a\xE7\xF5es:",
       lyricsMode: "Tradu\xE7\xE3o/Romaniza\xE7\xE3o das letras:",
       themedLyrics: "Letras com tema:",
-      lyricsFontSize: "Tamanho da fonte das letras (px):",
+      lyricsFontSize: "Tamanho da fonte das letras (%):",
       lyricsMargin: "Margem das letras (px):",
       transparentWidth: "Largura dos controles da janela (px):",
       transparentHeight: "Altura dos controles da janela (px):",
@@ -1628,7 +2738,7 @@
       actionBarBox: "Eylem \xE7ubu\u011Fu kutusu:",
       lyricsMode: "\u015Eark\u0131 s\xF6z\xFC \xE7eviri/romanizasyon:",
       themedLyrics: "Temal\u0131 \u015Fark\u0131 s\xF6zleri:",
-      lyricsFontSize: "\u015Eark\u0131 s\xF6z\xFC yaz\u0131 boyutu (px):",
+      lyricsFontSize: "\u015Eark\u0131 s\xF6z\xFC yaz\u0131 boyutu (%):",
       lyricsMargin: "\u015Eark\u0131 s\xF6z\xFC bo\u015Flu\u011Fu (px):",
       transparentWidth: "Pencere kontrolleri geni\u015Fli\u011Fi (px):",
       transparentHeight: "Pencere kontrolleri y\xFCksekli\u011Fi (px):",
@@ -1712,7 +2822,7 @@
     actionBarBox: "\u090F\u0915\u094D\u0936\u0928 \u092C\u093E\u0930 \u092C\u0949\u0915\u094D\u0938:",
     lyricsMode: "\u0917\u0940\u0924 \u0905\u0928\u0941\u0935\u093E\u0926/\u0930\u094B\u092E\u0928\u093E\u0907\u091C\u093C\u0947\u0936\u0928:",
     themedLyrics: "\u0925\u0940\u092E \u0935\u093E\u0932\u0947 \u0917\u0940\u0924:",
-    lyricsFontSize: "\u0917\u0940\u0924 \u092B\u093C\u0949\u0928\u094D\u091F \u0906\u0915\u093E\u0930 (px):",
+    lyricsFontSize: "\u0917\u0940\u0924 \u092B\u093C\u0949\u0928\u094D\u091F \u0906\u0915\u093E\u0930 (%):",
     lyricsMargin: "\u0917\u0940\u0924 \u092E\u093E\u0930\u094D\u091C\u093F\u0928 (px):",
     transparentWidth: "\u0935\u093F\u0902\u0921\u094B \u0915\u0902\u091F\u094D\u0930\u094B\u0932 \u091A\u094C\u0921\u093C\u093E\u0908 (px):",
     transparentHeight: "\u0935\u093F\u0902\u0921\u094B \u0915\u0902\u091F\u094D\u0930\u094B\u0932 \u090A\u0901\u091A\u093E\u0908 (px):",
@@ -1765,7 +2875,7 @@
     actionBarBox: "\xC5tg\xE4rdsf\xE4ltsbox:",
     lyricsMode: "Text\xF6vers\xE4ttning/Romanisering:",
     themedLyrics: "Tematiserade l\xE5ttexter:",
-    lyricsFontSize: "Textstorlek f\xF6r l\xE5ttexter (px):",
+    lyricsFontSize: "Textstorlek f\xF6r l\xE5ttexter (%):",
     lyricsMargin: "Marginal f\xF6r l\xE5ttexter (px):",
     transparentWidth: "F\xF6nsterkontrollers bredd (px):",
     transparentHeight: "F\xF6nsterkontrollers h\xF6jd (px):",
@@ -1818,7 +2928,7 @@
     actionBarBox: "\u30A2\u30AF\u30B7\u30E7\u30F3\u30D0\u30FC\u30DC\u30C3\u30AF\u30B9:",
     lyricsMode: "\u6B4C\u8A5E\u7FFB\u8A33/\u30ED\u30FC\u30DE\u5B57\u5316:",
     themedLyrics: "\u30C6\u30FC\u30DE\u4ED8\u304D\u6B4C\u8A5E:",
-    lyricsFontSize: "\u6B4C\u8A5E\u30D5\u30A9\u30F3\u30C8\u30B5\u30A4\u30BA (px):",
+    lyricsFontSize: "\u6B4C\u8A5E\u30D5\u30A9\u30F3\u30C8\u30B5\u30A4\u30BA (%):",
     lyricsMargin: "\u6B4C\u8A5E\u30DE\u30FC\u30B8\u30F3 (px):",
     transparentWidth: "\u30A6\u30A3\u30F3\u30C9\u30A6\u64CD\u4F5C\u5E45 (px):",
     transparentHeight: "\u30A6\u30A3\u30F3\u30C9\u30A6\u64CD\u4F5C\u9AD8\u3055 (px):",
@@ -1871,7 +2981,7 @@
     actionBarBox: "\u64CD\u4F5C\u680F\u6846:",
     lyricsMode: "\u6B4C\u8BCD\u7FFB\u8BD1/\u7F57\u9A6C\u5316:",
     themedLyrics: "\u4E3B\u9898\u6B4C\u8BCD:",
-    lyricsFontSize: "\u6B4C\u8BCD\u5B57\u53F7 (px):",
+    lyricsFontSize: "\u6B4C\u8BCD\u5B57\u53F7 (%):",
     lyricsMargin: "\u6B4C\u8BCD\u8FB9\u8DDD (px):",
     transparentWidth: "\u7A97\u53E3\u63A7\u4EF6\u5BBD\u5EA6 (px):",
     transparentHeight: "\u7A97\u53E3\u63A7\u4EF6\u9AD8\u5EA6 (px):",
@@ -1924,7 +3034,7 @@
     actionBarBox: "\uC561\uC158 \uBC14 \uBC15\uC2A4:",
     lyricsMode: "\uAC00\uC0AC \uBC88\uC5ED/\uB85C\uB9C8\uC790 \uD45C\uAE30:",
     themedLyrics: "\uD14C\uB9C8 \uAC00\uC0AC:",
-    lyricsFontSize: "\uAC00\uC0AC \uAE00\uAF34 \uD06C\uAE30 (px):",
+    lyricsFontSize: "\uAC00\uC0AC \uAE00\uAF34 \uD06C\uAE30 (%):",
     lyricsMargin: "\uAC00\uC0AC \uC5EC\uBC31 (px):",
     transparentWidth: "\uCC3D \uCEE8\uD2B8\uB864 \uB108\uBE44 (px):",
     transparentHeight: "\uCC3D \uCEE8\uD2B8\uB864 \uB192\uC774 (px):",
@@ -2110,12 +3220,279 @@
     };
     return tips[lang] || settingsCopy.tooltips;
   }
-  function getClientLanguage() {
+  var LATE_STRINGS = {
+    ru: {
+      openLibrary: "\u0411\u0438\u0431\u043B\u0438\u043E\u0442\u0435\u043A\u0430 \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u0439",
+      imageLibrary: "\u0411\u0438\u0431\u043B\u0438\u043E\u0442\u0435\u043A\u0430 \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u0439",
+      addImages: "\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u044F",
+      libraryEmpty: "\u041F\u043E\u043A\u0430 \u043D\u0435\u0442 \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u0439. \u0414\u043E\u0431\u0430\u0432\u044C\u0442\u0435, \u0447\u0442\u043E\u0431\u044B \u043D\u0430\u0447\u0430\u0442\u044C.",
+      removeImage: "\u0423\u0434\u0430\u043B\u0438\u0442\u044C",
+      hiResCover: "\u0418\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u044F \u0432\u044B\u0441\u043E\u043A\u043E\u0433\u043E \u0440\u0430\u0437\u0440\u0435\u0448\u0435\u043D\u0438\u044F:",
+      language: "\u042F\u0437\u044B\u043A:",
+      languageChoice: "\u0412\u044B\u0431\u0440\u0430\u0442\u044C \u044F\u0437\u044B\u043A:",
+      languageOptions: { auto: "\u041A\u0430\u043A \u0432 Spotify" },
+      animatedEngine: "\u0414\u0432\u0438\u0436\u043E\u043A:",
+      kawarp: { warp: "\u0421\u0438\u043B\u0430 \u0438\u0441\u043A\u0430\u0436\u0435\u043D\u0438\u044F (%):", speed: "\u0421\u043A\u043E\u0440\u043E\u0441\u0442\u044C \u0430\u043D\u0438\u043C\u0430\u0446\u0438\u0438 (%):", saturation: "\u041D\u0430\u0441\u044B\u0449\u0435\u043D\u043D\u043E\u0441\u0442\u044C (%):", scale: "\u041C\u0430\u0441\u0448\u0442\u0430\u0431 (%):", contrast: "\u041A\u043E\u043D\u0442\u0440\u0430\u0441\u0442 (%):" },
+      sections: { language: "\u042F\u0437\u044B\u043A" },
+      subSections: { kawarp: "\u0410\u043D\u0438\u043C\u0438\u0440\u043E\u0432\u0430\u043D\u043D\u044B\u0439 \u0444\u043E\u043D", sidebars: "\u0411\u043E\u043A\u043E\u0432\u044B\u0435 \u043F\u0430\u043D\u0435\u043B\u0438", vinyl: "\u0412\u0438\u043D\u0438\u043B" },
+      vinyl: { npv: "\u0412\u0438\u043D\u0438\u043B \u0432 \u0431\u043E\u043A\u043E\u0432\u043E\u0439 \u043F\u0430\u043D\u0435\u043B\u0438:", playbar: "\u0412\u0438\u043D\u0438\u043B \u0432 \u043F\u043B\u0435\u0435\u0440\u0435:", cinema: "\u0412\u0438\u043D\u0438\u043B \u0432 \u043A\u0438\u043D\u043E\u0440\u0435\u0436\u0438\u043C\u0435:", miniPlayer: "\u0412\u0438\u043D\u0438\u043B \u0432 \u043C\u0438\u043D\u0438-\u043F\u043B\u0435\u0435\u0440\u0435:", speed: "\u0421\u0435\u043A\u0443\u043D\u0434 \u043D\u0430 \u043E\u0431\u043E\u0440\u043E\u0442:" },
+      dropdown: { engineTiles: "\u041A\u043B\u0430\u0441\u0441\u0438\u0447\u0435\u0441\u043A\u0438\u0439" },
+      ui: { leftSidebarBlur: "\u0420\u0430\u0437\u043C\u044B\u0442\u0438\u0435 \u0437\u0430 \u043B\u0435\u0432\u043E\u0439 \u043F\u0430\u043D\u0435\u043B\u044C\u044E:", leftSidebarBlurAmount: "\u0420\u0430\u0437\u043C\u044B\u0442\u0438\u0435 \u043B\u0435\u0432\u043E\u0439 \u043F\u0430\u043D\u0435\u043B\u0438 (px):", rightSidebarBlur: "\u0420\u0430\u0437\u043C\u044B\u0442\u0438\u0435 \u0437\u0430 \u043F\u0440\u0430\u0432\u043E\u0439 \u043F\u0430\u043D\u0435\u043B\u044C\u044E:", rightSidebarBlurAmount: "\u0420\u0430\u0437\u043C\u044B\u0442\u0438\u0435 \u043F\u0440\u0430\u0432\u043E\u0439 \u043F\u0430\u043D\u0435\u043B\u0438 (px):", localFilesTransparent: "\u041F\u0440\u043E\u0437\u0440\u0430\u0447\u043D\u0430\u044F \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0430 \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0445 \u0444\u0430\u0439\u043B\u043E\u0432:" },
+      tooltips: {
+        language: "\xAB\u041A\u0430\u043A \u0432 Spotify\xBB \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0435\u0442 \u044F\u0437\u044B\u043A \u043F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u044F; \xAB\u041F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044C\u0441\u043A\u0438\u0439\xBB \u0437\u0430\u043A\u0440\u0435\u043F\u043B\u044F\u0435\u0442 \u0432\u044B\u0431\u0440\u0430\u043D\u043D\u044B\u0439 \u0432\u0430\u043C\u0438 \u044F\u0437\u044B\u043A.",
+        sidebarBlur: "\u0420\u0430\u0437\u043C\u044B\u0432\u0430\u0435\u0442 \u0444\u043E\u043D, \u043F\u0440\u043E\u0441\u0432\u0435\u0447\u0438\u0432\u0430\u044E\u0449\u0438\u0439 \u0441\u043A\u0432\u043E\u0437\u044C \u0431\u043E\u043A\u043E\u0432\u044B\u0435 \u043F\u0430\u043D\u0435\u043B\u0438.",
+        vinyl: "\u041F\u0440\u0435\u0432\u0440\u0430\u0449\u0430\u0435\u0442 \u043E\u0431\u043B\u043E\u0436\u043A\u0443 \u0432\u043E \u0432\u0440\u0430\u0449\u0430\u044E\u0449\u0443\u044E\u0441\u044F \u043F\u043B\u0430\u0441\u0442\u0438\u043D\u043A\u0443. \u041D\u0430 \u043F\u0430\u0443\u0437\u0435 \u043E\u043D\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u044F\u0435\u0442 \u0441\u0432\u043E\u0439 \u0443\u0433\u043E\u043B.",
+        localFilesTransparent: "\u0423\u0431\u0438\u0440\u0430\u0435\u0442 \u0441\u043F\u043B\u043E\u0448\u043D\u0443\u044E \u0437\u0430\u043B\u0438\u0432\u043A\u0443 \u0437\u0430 \u043F\u0443\u043D\u043A\u0442\u043E\u043C \xAB\u041B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0444\u0430\u0439\u043B\u044B\xBB \u0432 \u043C\u0435\u0434\u0438\u0430\u0442\u0435\u043A\u0435.",
+        hiResCover: "\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u0442 \u0441\u0430\u043C\u0443\u044E \u0431\u043E\u043B\u044C\u0448\u0443\u044E \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0443\u044E \u043E\u0431\u043B\u043E\u0436\u043A\u0443, \u0447\u0442\u043E\u0431\u044B \u0444\u043E\u043D \u043E\u0441\u0442\u0430\u0432\u0430\u043B\u0441\u044F \u0447\u0451\u0442\u043A\u0438\u043C \u0432 \u0431\u043E\u043B\u044C\u0448\u043E\u043C \u043E\u043A\u043D\u0435. \u041E\u0442\u043A\u043B\u044E\u0447\u0438\u0442\u0435, \u0447\u0442\u043E\u0431\u044B \u0438\u0437\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u044F \u0437\u0430\u0433\u0440\u0443\u0436\u0430\u043B\u0438\u0441\u044C \u0431\u044B\u0441\u0442\u0440\u0435\u0435 \u0438 \u043D\u0435 \u0431\u044B\u043B\u043E \u0437\u0430\u0434\u0435\u0440\u0436\u043A\u0438 \u043F\u0440\u0438 \u0441\u043C\u0435\u043D\u0435 \u0442\u0440\u0435\u043A\u0430."
+      }
+    },
+    es: {
+      openLibrary: "Biblioteca de im\xE1genes",
+      imageLibrary: "Biblioteca de im\xE1genes",
+      addImages: "A\xF1adir im\xE1genes",
+      libraryEmpty: "A\xFAn no hay im\xE1genes. A\xF1ade algunas para empezar.",
+      removeImage: "Quitar",
+      hiResCover: "Usar im\xE1genes en alta resoluci\xF3n:",
+      language: "Idioma:",
+      languageChoice: "Elegir idioma:",
+      languageOptions: { auto: "Seguir a Spotify" },
+      animatedEngine: "Motor:",
+      kawarp: { warp: "Intensidad de distorsi\xF3n (%):", speed: "Velocidad de animaci\xF3n (%):", saturation: "Saturaci\xF3n (%):", scale: "Escala (%):", contrast: "Contraste (%):" },
+      sections: { language: "Idioma" },
+      subSections: { kawarp: "Fondo animado", sidebars: "Barras laterales", vinyl: "Vinilo" },
+      vinyl: { npv: "Vinilo en la barra lateral:", playbar: "Vinilo en el reproductor:", cinema: "Vinilo en modo cine:", miniPlayer: "Vinilo en el minirreproductor:", speed: "Segundos por vuelta:" },
+      dropdown: { engineTiles: "Cl\xE1sico" },
+      ui: { leftSidebarBlur: "Desenfoque tras la barra izquierda:", leftSidebarBlurAmount: "Desenfoque barra izquierda (px):", rightSidebarBlur: "Desenfoque tras la barra derecha:", rightSidebarBlurAmount: "Desenfoque barra derecha (px):", localFilesTransparent: "Tarjeta de archivos locales transparente:" },
+      tooltips: {
+        language: "\xABSeguir a Spotify\xBB usa el idioma de la aplicaci\xF3n; \xABPersonalizado\xBB fija el panel en el que elijas.",
+        sidebarBlur: "Desenfoca el fondo que se ve a trav\xE9s de las barras laterales izquierda y derecha.",
+        vinyl: "Convierte la portada en un disco giratorio. Mantiene su \xE1ngulo mientras la reproducci\xF3n est\xE1 en pausa.",
+        localFilesTransparent: "Quita el relleno s\xF3lido detr\xE1s de la entrada Archivos locales en la biblioteca.",
+        hiResCover: "Carga la portada m\xE1s grande disponible para que el fondo se mantenga n\xEDtido en una ventana grande. Desact\xEDvalo para que las im\xE1genes carguen m\xE1s r\xE1pido y evitar el retardo al cambiar de canci\xF3n."
+      }
+    },
+    pt: {
+      openLibrary: "Biblioteca de imagens",
+      imageLibrary: "Biblioteca de imagens",
+      addImages: "Adicionar imagens",
+      libraryEmpty: "Ainda sem imagens. Adicione algumas para come\xE7ar.",
+      removeImage: "Remover",
+      hiResCover: "Usar imagens em alta resolu\xE7\xE3o:",
+      language: "Idioma:",
+      languageChoice: "Escolher idioma:",
+      languageOptions: { auto: "Seguir o Spotify" },
+      animatedEngine: "Motor:",
+      kawarp: { warp: "Intensidade da distor\xE7\xE3o (%):", speed: "Velocidade da anima\xE7\xE3o (%):", saturation: "Satura\xE7\xE3o (%):", scale: "Escala (%):", contrast: "Contraste (%):" },
+      sections: { language: "Idioma" },
+      subSections: { kawarp: "Fundo animado", sidebars: "Barras laterais", vinyl: "Vinil" },
+      vinyl: { npv: "Vinil na barra lateral:", playbar: "Vinil no player:", cinema: "Vinil no modo cinema:", miniPlayer: "Vinil no mini player:", speed: "Segundos por volta:" },
+      dropdown: { engineTiles: "Cl\xE1ssico" },
+      ui: { leftSidebarBlur: "Desfoque atr\xE1s da barra esquerda:", leftSidebarBlurAmount: "Desfoque da barra esquerda (px):", rightSidebarBlur: "Desfoque atr\xE1s da barra direita:", rightSidebarBlurAmount: "Desfoque da barra direita (px):", localFilesTransparent: "Cart\xE3o de arquivos locais transparente:" },
+      tooltips: {
+        language: "\xABSeguir o Spotify\xBB usa o idioma do aplicativo; \xABPersonalizado\xBB fixa o painel no que voc\xEA escolher.",
+        sidebarBlur: "Desfoca o fundo que aparece atrav\xE9s das barras laterais esquerda e direita.",
+        vinyl: "Transforma a capa em um disco girat\xF3rio. Ele mant\xE9m o \xE2ngulo enquanto a reprodu\xE7\xE3o est\xE1 pausada.",
+        localFilesTransparent: "Remove o preenchimento s\xF3lido atr\xE1s do item Arquivos locais na biblioteca.",
+        hiResCover: "Carrega a maior capa dispon\xEDvel para o fundo continuar n\xEDtido em uma janela grande. Desative para as imagens carregarem mais r\xE1pido e evitar o atraso ao trocar de m\xFAsica."
+      }
+    },
+    tr: {
+      openLibrary: "G\xF6rsel kitapl\u0131\u011F\u0131",
+      imageLibrary: "G\xF6rsel kitapl\u0131\u011F\u0131",
+      addImages: "G\xF6rsel ekle",
+      libraryEmpty: "Hen\xFCz g\xF6rsel yok. Ba\u015Flamak i\xE7in birka\xE7 tane ekleyin.",
+      removeImage: "Kald\u0131r",
+      hiResCover: "Y\xFCksek \xE7\xF6z\xFCn\xFCrl\xFCkl\xFC g\xF6rseller:",
+      language: "Dil:",
+      languageChoice: "Dil se\xE7:",
+      languageOptions: { auto: "Spotify'\u0131 takip et" },
+      animatedEngine: "Motor:",
+      kawarp: { warp: "B\xFCk\xFClme \u015Fiddeti (%):", speed: "Animasyon h\u0131z\u0131 (%):", saturation: "Doygunluk (%):", scale: "\xD6l\xE7ek (%):", contrast: "Kontrast (%):" },
+      sections: { language: "Dil" },
+      subSections: { kawarp: "Animasyonlu arka plan", sidebars: "Kenar \xE7ubuklar\u0131", vinyl: "Plak" },
+      vinyl: { npv: "Kenar \xE7ubu\u011Funda plak:", playbar: "Oynat\u0131c\u0131da plak:", cinema: "Sinema modunda plak:", miniPlayer: "Mini oynat\u0131c\u0131da plak:", speed: "Tur ba\u015F\u0131na saniye:" },
+      dropdown: { engineTiles: "Klasik" },
+      ui: { leftSidebarBlur: "Sol kenar \xE7ubu\u011Funun arkas\u0131n\u0131 bulan\u0131kla\u015Ft\u0131r:", leftSidebarBlurAmount: "Sol kenar \xE7ubu\u011Fu bulan\u0131kl\u0131\u011F\u0131 (px):", rightSidebarBlur: "Sa\u011F kenar \xE7ubu\u011Funun arkas\u0131n\u0131 bulan\u0131kla\u015Ft\u0131r:", rightSidebarBlurAmount: "Sa\u011F kenar \xE7ubu\u011Fu bulan\u0131kl\u0131\u011F\u0131 (px):", localFilesTransparent: "\u015Eeffaf yerel dosyalar kart\u0131:" },
+      tooltips: {
+        language: "\xABSpotify'\u0131 takip et\xBB uygulaman\u0131n dilini kullan\u0131r; \xAB\xD6zel\xBB paneli se\xE7ti\u011Finiz dile sabitler.",
+        sidebarBlur: "Sol ve sa\u011F kenar \xE7ubuklar\u0131ndan g\xF6r\xFCnen arka plan\u0131 bulan\u0131kla\u015Ft\u0131r\u0131r.",
+        vinyl: "Kapa\u011F\u0131 d\xF6nen bir pla\u011Fa d\xF6n\xFC\u015Ft\xFCr\xFCr. Duraklat\u0131ld\u0131\u011F\u0131nda a\xE7\u0131s\u0131n\u0131 korur.",
+        localFilesTransparent: "Kitapl\u0131ktaki \xABYerel Dosyalar\xBB girdisinin arkas\u0131ndaki dolgu rengini kald\u0131r\u0131r.",
+        hiResCover: "Arka plan\u0131n b\xFCy\xFCk pencerede de net kalmas\u0131 i\xE7in mevcut en b\xFCy\xFCk kapa\u011F\u0131 y\xFCkler. G\xF6rsellerin daha h\u0131zl\u0131 y\xFCklenmesi ve \u015Fark\u0131 de\u011Fi\u015Fiminde gecikme olmamas\u0131 i\xE7in kapat\u0131n."
+      }
+    },
+    hi: {
+      openLibrary: "\u091B\u0935\u093F \u0932\u093E\u0907\u092C\u094D\u0930\u0947\u0930\u0940",
+      imageLibrary: "\u091B\u0935\u093F \u0932\u093E\u0907\u092C\u094D\u0930\u0947\u0930\u0940",
+      addImages: "\u091B\u0935\u093F\u092F\u093E\u0901 \u091C\u094B\u0921\u093C\u0947\u0902",
+      libraryEmpty: "\u0905\u092D\u0940 \u0915\u094B\u0908 \u091B\u0935\u093F \u0928\u0939\u0940\u0902. \u0936\u0941\u0930\u0942 \u0915\u0930\u0928\u0947 \u0915\u0947 \u0932\u093F\u090F \u0915\u0941\u091B \u091C\u094B\u0921\u093C\u0947\u0902.",
+      removeImage: "\u0939\u091F\u093E\u090F\u0901",
+      hiResCover: "\u0939\u093E\u0908-\u0930\u0947\u091C\u093C \u091B\u0935\u093F\u092F\u093E\u0901 \u0909\u092A\u092F\u094B\u0917 \u0915\u0930\u0947\u0902:",
+      language: "\u092D\u093E\u0937\u093E:",
+      languageChoice: "\u092D\u093E\u0937\u093E \u091A\u0941\u0928\u0947\u0902:",
+      languageOptions: { auto: "Spotify \u0915\u093E \u0905\u0928\u0941\u0938\u0930\u0923 \u0915\u0930\u0947\u0902" },
+      animatedEngine: "\u0907\u0902\u091C\u0928:",
+      kawarp: { warp: "\u0935\u093F\u0915\u0943\u0924\u093F \u0924\u0940\u0935\u094D\u0930\u0924\u093E (%):", speed: "\u090F\u0928\u093F\u092E\u0947\u0936\u0928 \u0917\u0924\u093F (%):", saturation: "\u0938\u0902\u0924\u0943\u092A\u094D\u0924\u093F (%):", scale: "\u0938\u094D\u0915\u0947\u0932 (%):", contrast: "\u0915\u0902\u091F\u094D\u0930\u093E\u0938\u094D\u091F (%):" },
+      sections: { language: "\u092D\u093E\u0937\u093E" },
+      subSections: { kawarp: "\u090F\u0928\u093F\u092E\u0947\u091F\u0947\u0921 \u092C\u0948\u0915\u0917\u094D\u0930\u093E\u0909\u0902\u0921", sidebars: "\u0938\u093E\u0907\u0921\u092C\u093E\u0930", vinyl: "\u0935\u093F\u0928\u093E\u0907\u0932" },
+      vinyl: { npv: "\u0938\u093E\u0907\u0921\u092C\u093E\u0930 \u092E\u0947\u0902 \u0935\u093F\u0928\u093E\u0907\u0932:", playbar: "\u092A\u094D\u0932\u0947\u092F\u0930 \u092E\u0947\u0902 \u0935\u093F\u0928\u093E\u0907\u0932:", cinema: "\u0938\u093F\u0928\u0947\u092E\u093E \u092E\u094B\u0921 \u092E\u0947\u0902 \u0935\u093F\u0928\u093E\u0907\u0932:", miniPlayer: "\u092E\u093F\u0928\u0940 \u092A\u094D\u0932\u0947\u092F\u0930 \u092E\u0947\u0902 \u0935\u093F\u0928\u093E\u0907\u0932:", speed: "\u092A\u094D\u0930\u0924\u093F \u091A\u0915\u094D\u0915\u0930 \u0938\u0947\u0915\u0902\u0921:" },
+      dropdown: { engineTiles: "\u0915\u094D\u0932\u093E\u0938\u093F\u0915" },
+      ui: { leftSidebarBlur: "\u092C\u093E\u090F\u0901 \u0938\u093E\u0907\u0921\u092C\u093E\u0930 \u0915\u0947 \u092A\u0940\u091B\u0947 \u092C\u094D\u0932\u0930:", leftSidebarBlurAmount: "\u092C\u093E\u092F\u093E\u0901 \u0938\u093E\u0907\u0921\u092C\u093E\u0930 \u092C\u094D\u0932\u0930 (px):", rightSidebarBlur: "\u0926\u093E\u090F\u0901 \u0938\u093E\u0907\u0921\u092C\u093E\u0930 \u0915\u0947 \u092A\u0940\u091B\u0947 \u092C\u094D\u0932\u0930:", rightSidebarBlurAmount: "\u0926\u093E\u092F\u093E\u0901 \u0938\u093E\u0907\u0921\u092C\u093E\u0930 \u092C\u094D\u0932\u0930 (px):", localFilesTransparent: "\u0932\u094B\u0915\u0932 \u092B\u093C\u093E\u0907\u0932\u094D\u0938 \u0915\u093E\u0930\u094D\u0921 \u092A\u093E\u0930\u0926\u0930\u094D\u0936\u0940:" },
+      tooltips: {
+        language: "\xABSpotify \u0915\u093E \u0905\u0928\u0941\u0938\u0930\u0923 \u0915\u0930\u0947\u0902\xBB \u0910\u092A \u0915\u0940 \u092D\u093E\u0937\u093E \u0909\u092A\u092F\u094B\u0917 \u0915\u0930\u0924\u093E \u0939\u0948; \xAB\u0915\u0938\u094D\u091F\u092E\xBB \u092A\u0948\u0928\u0932 \u0915\u094B \u091A\u0941\u0928\u0940 \u0939\u0941\u0908 \u092D\u093E\u0937\u093E \u092A\u0930 \u0938\u094D\u0925\u093F\u0930 \u0915\u0930\u0924\u093E \u0939\u0948.",
+        sidebarBlur: "\u092C\u093E\u090F\u0901 \u0914\u0930 \u0926\u093E\u090F\u0901 \u0938\u093E\u0907\u0921\u092C\u093E\u0930 \u0938\u0947 \u0926\u093F\u0916\u0928\u0947 \u0935\u093E\u0932\u0947 \u092C\u0948\u0915\u0917\u094D\u0930\u093E\u0909\u0902\u0921 \u0915\u094B \u0927\u0941\u0902\u0927\u0932\u093E \u0915\u0930\u0924\u093E \u0939\u0948.",
+        vinyl: "\u0915\u0935\u0930 \u0915\u094B \u0918\u0942\u092E\u0924\u0947 \u0930\u093F\u0915\u0949\u0930\u094D\u0921 \u092E\u0947\u0902 \u092C\u0926\u0932\u0924\u093E \u0939\u0948. \u0930\u0941\u0915\u0928\u0947 \u092A\u0930 \u092F\u0939 \u0905\u092A\u0928\u093E \u0915\u094B\u0923 \u092C\u0928\u093E\u090F \u0930\u0916\u0924\u093E \u0939\u0948.",
+        localFilesTransparent: "\u0932\u093E\u0907\u092C\u094D\u0930\u0947\u0930\u0940 \u092E\u0947\u0902 \xAB\u0932\u094B\u0915\u0932 \u092B\u093C\u093E\u0907\u0932\u094D\u0938\xBB \u092A\u094D\u0930\u0935\u093F\u0937\u094D\u091F\u093F \u0915\u0947 \u092A\u0940\u091B\u0947 \u0915\u0940 \u0920\u094B\u0938 \u092D\u0930\u093E\u0908 \u0939\u091F\u093E\u0924\u093E \u0939\u0948.",
+        hiResCover: "\u0938\u092C\u0938\u0947 \u092C\u0921\u093C\u093E \u0909\u092A\u0932\u092C\u094D\u0927 \u0915\u0935\u0930 \u0932\u094B\u0921 \u0915\u0930\u0924\u093E \u0939\u0948 \u0924\u093E\u0915\u093F \u092C\u0921\u093C\u0947 \u0935\u093F\u0902\u0921\u094B \u092E\u0947\u0902 \u092D\u0940 \u092C\u0948\u0915\u0917\u094D\u0930\u093E\u0909\u0902\u0921 \u0936\u093E\u0930\u094D\u092A \u0930\u0939\u0947. \u091B\u0935\u093F\u092F\u093E\u0901 \u0924\u0947\u091C\u093C\u0940 \u0938\u0947 \u0932\u094B\u0921 \u0915\u0930\u0928\u0947 \u0914\u0930 \u0917\u093E\u0928\u093E \u092C\u0926\u0932\u0924\u0947 \u0938\u092E\u092F \u0926\u0947\u0930\u0940 \u0938\u0947 \u092C\u091A\u0928\u0947 \u0915\u0947 \u0932\u093F\u090F \u0907\u0938\u0947 \u092C\u0902\u0926 \u0915\u0930\u0947\u0902."
+      }
+    },
+    sv: {
+      openLibrary: "Bildbibliotek",
+      imageLibrary: "Bildbibliotek",
+      addImages: "L\xE4gg till bilder",
+      libraryEmpty: "Inga bilder \xE4n. L\xE4gg till n\xE5gra f\xF6r att komma ig\xE5ng.",
+      removeImage: "Ta bort",
+      hiResCover: "Anv\xE4nd h\xF6guppl\xF6sta bilder:",
+      language: "Spr\xE5k:",
+      languageChoice: "V\xE4lj spr\xE5k:",
+      languageOptions: { auto: "F\xF6lj Spotify" },
+      animatedEngine: "Motor:",
+      kawarp: { warp: "F\xF6rvr\xE4ngningsstyrka (%):", speed: "Animationshastighet (%):", saturation: "M\xE4ttnad (%):", scale: "Skala (%):", contrast: "Kontrast (%):" },
+      sections: { language: "Spr\xE5k" },
+      subSections: { kawarp: "Animerad bakgrund", sidebars: "Sidopaneler", vinyl: "Vinyl" },
+      vinyl: { npv: "Vinyl i sidopanelen:", playbar: "Vinyl i spelaren:", cinema: "Vinyl i biol\xE4ge:", miniPlayer: "Vinyl i minispelaren:", speed: "Sekunder per varv:" },
+      dropdown: { engineTiles: "Klassisk" },
+      ui: { leftSidebarBlur: "Osk\xE4rpa bakom v\xE4nster sidopanel:", leftSidebarBlurAmount: "Osk\xE4rpa v\xE4nster sidopanel (px):", rightSidebarBlur: "Osk\xE4rpa bakom h\xF6ger sidopanel:", rightSidebarBlurAmount: "Osk\xE4rpa h\xF6ger sidopanel (px):", localFilesTransparent: "Genomskinligt kort f\xF6r lokala filer:" },
+      tooltips: {
+        language: "\xBBF\xF6lj Spotify\xBB anv\xE4nder appens spr\xE5k; \xBBAnpassad\xBB l\xE5ser panelen till det du v\xE4ljer.",
+        sidebarBlur: "G\xF6r bakgrunden som syns genom v\xE4nster och h\xF6ger sidopanel oskarp.",
+        vinyl: "G\xF6r omslaget till en snurrande skiva. Den beh\xE5ller sin vinkel n\xE4r uppspelningen pausas.",
+        localFilesTransparent: "Tar bort den helt\xE4ckande fyllningen bakom posten Lokala filer i biblioteket.",
+        hiResCover: "Laddar det st\xF6rsta omslag som finns, s\xE5 att bakgrunden h\xE5ller sig skarp i ett stort f\xF6nster. St\xE4ng av f\xF6r att bilder ska laddas snabbare och f\xF6r att undvika f\xF6rdr\xF6jningen vid l\xE5tbyte."
+      }
+    },
+    ja: {
+      openLibrary: "\u753B\u50CF\u30E9\u30A4\u30D6\u30E9\u30EA",
+      imageLibrary: "\u753B\u50CF\u30E9\u30A4\u30D6\u30E9\u30EA",
+      addImages: "\u753B\u50CF\u3092\u8FFD\u52A0",
+      libraryEmpty: "\u753B\u50CF\u304C\u307E\u3060\u3042\u308A\u307E\u305B\u3093\u3002\u8FFD\u52A0\u3057\u3066\u59CB\u3081\u307E\u3057\u3087\u3046\u3002",
+      removeImage: "\u524A\u9664",
+      hiResCover: "\u9AD8\u89E3\u50CF\u5EA6\u306E\u753B\u50CF\u3092\u4F7F\u3046:",
+      language: "\u8A00\u8A9E:",
+      languageChoice: "\u8A00\u8A9E\u3092\u9078\u629E:",
+      languageOptions: { auto: "Spotify\u306B\u5408\u308F\u305B\u308B" },
+      animatedEngine: "\u30A8\u30F3\u30B8\u30F3:",
+      kawarp: { warp: "\u3086\u304C\u307F\u306E\u5F37\u3055 (%):", speed: "\u30A2\u30CB\u30E1\u30FC\u30B7\u30E7\u30F3\u901F\u5EA6 (%):", saturation: "\u5F69\u5EA6 (%):", scale: "\u30B9\u30B1\u30FC\u30EB (%):", contrast: "\u30B3\u30F3\u30C8\u30E9\u30B9\u30C8 (%):" },
+      sections: { language: "\u8A00\u8A9E" },
+      subSections: { kawarp: "\u30A2\u30CB\u30E1\u30FC\u30B7\u30E7\u30F3\u80CC\u666F", sidebars: "\u30B5\u30A4\u30C9\u30D0\u30FC", vinyl: "\u30EC\u30B3\u30FC\u30C9" },
+      vinyl: { npv: "\u30B5\u30A4\u30C9\u30D0\u30FC\u306E\u30EC\u30B3\u30FC\u30C9:", playbar: "\u30D7\u30EC\u30FC\u30E4\u30FC\u306E\u30EC\u30B3\u30FC\u30C9:", cinema: "\u30B7\u30CD\u30DE\u30E2\u30FC\u30C9\u306E\u30EC\u30B3\u30FC\u30C9:", miniPlayer: "\u30DF\u30CB\u30D7\u30EC\u30FC\u30E4\u30FC\u306E\u30EC\u30B3\u30FC\u30C9:", speed: "1\u56DE\u8EE2\u306E\u79D2\u6570:" },
+      dropdown: { engineTiles: "\u30AF\u30E9\u30B7\u30C3\u30AF" },
+      ui: { leftSidebarBlur: "\u5DE6\u30B5\u30A4\u30C9\u30D0\u30FC\u306E\u80CC\u666F\u3092\u307C\u304B\u3059:", leftSidebarBlurAmount: "\u5DE6\u30B5\u30A4\u30C9\u30D0\u30FC\u306E\u307C\u304B\u3057 (px):", rightSidebarBlur: "\u53F3\u30B5\u30A4\u30C9\u30D0\u30FC\u306E\u80CC\u666F\u3092\u307C\u304B\u3059:", rightSidebarBlurAmount: "\u53F3\u30B5\u30A4\u30C9\u30D0\u30FC\u306E\u307C\u304B\u3057 (px):", localFilesTransparent: "\u30ED\u30FC\u30AB\u30EB\u30D5\u30A1\u30A4\u30EB\u306E\u30AB\u30FC\u30C9\u3092\u900F\u660E\u306B:" },
+      tooltips: {
+        language: "\u300CSpotify\u306B\u5408\u308F\u305B\u308B\u300D\u306F\u30A2\u30D7\u30EA\u306E\u8A00\u8A9E\u3092\u4F7F\u3044\u307E\u3059\u3002\u300C\u30AB\u30B9\u30BF\u30E0\u300D\u306F\u9078\u3093\u3060\u8A00\u8A9E\u306B\u56FA\u5B9A\u3057\u307E\u3059\u3002",
+        sidebarBlur: "\u5DE6\u53F3\u306E\u30B5\u30A4\u30C9\u30D0\u30FC\u8D8A\u3057\u306B\u898B\u3048\u308B\u80CC\u666F\u3092\u307C\u304B\u3057\u307E\u3059\u3002",
+        vinyl: "\u30AB\u30D0\u30FC\u30A2\u30FC\u30C8\u3092\u56DE\u8EE2\u3059\u308B\u30EC\u30B3\u30FC\u30C9\u306B\u3057\u307E\u3059\u3002\u4E00\u6642\u505C\u6B62\u4E2D\u306F\u89D2\u5EA6\u3092\u4FDD\u3061\u307E\u3059\u3002",
+        localFilesTransparent: "\u30E9\u30A4\u30D6\u30E9\u30EA\u306E\u300C\u30ED\u30FC\u30AB\u30EB\u30D5\u30A1\u30A4\u30EB\u300D\u9805\u76EE\u306E\u80CC\u666F\u306E\u5857\u308A\u3064\u3076\u3057\u3092\u6D88\u3057\u307E\u3059\u3002",
+        hiResCover: "\u5229\u7528\u3067\u304D\u308B\u6700\u5927\u30B5\u30A4\u30BA\u306E\u30AB\u30D0\u30FC\u3092\u8AAD\u307F\u8FBC\u307F\u3001\u5927\u304D\u306A\u30A6\u30A3\u30F3\u30C9\u30A6\u3067\u3082\u80CC\u666F\u3092\u9BAE\u660E\u306B\u4FDD\u3061\u307E\u3059\u3002\u753B\u50CF\u306E\u8AAD\u307F\u8FBC\u307F\u3092\u901F\u304F\u3057\u3001\u66F2\u306E\u5207\u308A\u66FF\u3048\u6642\u306E\u9045\u308C\u3092\u306A\u304F\u3059\u306B\u306F\u30AA\u30D5\u306B\u3057\u3066\u304F\u3060\u3055\u3044\u3002"
+      }
+    },
+    zh: {
+      openLibrary: "\u56FE\u7247\u5E93",
+      imageLibrary: "\u56FE\u7247\u5E93",
+      addImages: "\u6DFB\u52A0\u56FE\u7247",
+      libraryEmpty: "\u8FD8\u6CA1\u6709\u56FE\u7247\u3002\u6DFB\u52A0\u4E00\u4E9B\u5373\u53EF\u5F00\u59CB\u3002",
+      removeImage: "\u79FB\u9664",
+      hiResCover: "\u4F7F\u7528\u9AD8\u5206\u8FA8\u7387\u56FE\u7247:",
+      language: "\u8BED\u8A00:",
+      languageChoice: "\u9009\u62E9\u8BED\u8A00:",
+      languageOptions: { auto: "\u8DDF\u968F Spotify" },
+      animatedEngine: "\u5F15\u64CE:",
+      kawarp: { warp: "\u626D\u66F2\u5F3A\u5EA6 (%):", speed: "\u52A8\u753B\u901F\u5EA6 (%):", saturation: "\u9971\u548C\u5EA6 (%):", scale: "\u7F29\u653E (%):", contrast: "\u5BF9\u6BD4\u5EA6 (%):" },
+      sections: { language: "\u8BED\u8A00" },
+      subSections: { kawarp: "\u52A8\u753B\u80CC\u666F", sidebars: "\u4FA7\u8FB9\u680F", vinyl: "\u9ED1\u80F6" },
+      vinyl: { npv: "\u4FA7\u8FB9\u680F\u9ED1\u80F6:", playbar: "\u64AD\u653E\u5668\u9ED1\u80F6:", cinema: "\u5F71\u9662\u6A21\u5F0F\u9ED1\u80F6:", miniPlayer: "\u8FF7\u4F60\u64AD\u653E\u5668\u9ED1\u80F6:", speed: "\u6BCF\u5708\u79D2\u6570:" },
+      dropdown: { engineTiles: "\u7ECF\u5178" },
+      ui: { leftSidebarBlur: "\u6A21\u7CCA\u5DE6\u4FA7\u680F\u80CC\u666F:", leftSidebarBlurAmount: "\u5DE6\u4FA7\u680F\u6A21\u7CCA (px):", rightSidebarBlur: "\u6A21\u7CCA\u53F3\u4FA7\u680F\u80CC\u666F:", rightSidebarBlurAmount: "\u53F3\u4FA7\u680F\u6A21\u7CCA (px):", localFilesTransparent: "\u672C\u5730\u6587\u4EF6\u5361\u7247\u900F\u660E:" },
+      tooltips: {
+        language: "\u201C\u8DDF\u968F Spotify\u201D\u4F7F\u7528\u5E94\u7528\u7684\u8BED\u8A00\uFF1B\u201C\u81EA\u5B9A\u4E49\u201D\u5C06\u9762\u677F\u56FA\u5B9A\u4E3A\u4F60\u9009\u62E9\u7684\u8BED\u8A00\u3002",
+        sidebarBlur: "\u6A21\u7CCA\u900F\u8FC7\u5DE6\u53F3\u4FA7\u8FB9\u680F\u663E\u793A\u7684\u80CC\u666F\u3002",
+        vinyl: "\u628A\u5C01\u9762\u53D8\u6210\u65CB\u8F6C\u7684\u5531\u7247\u3002\u6682\u505C\u65F6\u4F1A\u4FDD\u6301\u5F53\u524D\u89D2\u5EA6\u3002",
+        localFilesTransparent: "\u6E05\u9664\u8D44\u6599\u5E93\u4E2D\u201C\u672C\u5730\u6587\u4EF6\u201D\u6761\u76EE\u80CC\u540E\u7684\u7EAF\u8272\u586B\u5145\u3002",
+        hiResCover: "\u52A0\u8F7D\u53EF\u7528\u7684\u6700\u5927\u5C01\u9762\uFF0C\u8BA9\u80CC\u666F\u5728\u5927\u7A97\u53E3\u4E0B\u4E5F\u4FDD\u6301\u6E05\u6670\u3002\u5173\u95ED\u53EF\u8BA9\u56FE\u7247\u52A0\u8F7D\u66F4\u5FEB\uFF0C\u907F\u514D\u5207\u6B4C\u65F6\u7684\u5EF6\u8FDF\u3002"
+      }
+    },
+    ko: {
+      openLibrary: "\uC774\uBBF8\uC9C0 \uB77C\uC774\uBE0C\uB7EC\uB9AC",
+      imageLibrary: "\uC774\uBBF8\uC9C0 \uB77C\uC774\uBE0C\uB7EC\uB9AC",
+      addImages: "\uC774\uBBF8\uC9C0 \uCD94\uAC00",
+      libraryEmpty: "\uC544\uC9C1 \uC774\uBBF8\uC9C0\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. \uCD94\uAC00\uD574\uC11C \uC2DC\uC791\uD558\uC138\uC694.",
+      removeImage: "\uC0AD\uC81C",
+      hiResCover: "\uACE0\uD574\uC0C1\uB3C4 \uC774\uBBF8\uC9C0 \uC0AC\uC6A9:",
+      language: "\uC5B8\uC5B4:",
+      languageChoice: "\uC5B8\uC5B4 \uC120\uD0DD:",
+      languageOptions: { auto: "Spotify \uB530\uB974\uAE30" },
+      animatedEngine: "\uC5D4\uC9C4:",
+      kawarp: { warp: "\uC65C\uACE1 \uAC15\uB3C4 (%):", speed: "\uC560\uB2C8\uBA54\uC774\uC158 \uC18D\uB3C4 (%):", saturation: "\uCC44\uB3C4 (%):", scale: "\uD06C\uAE30 (%):", contrast: "\uB300\uBE44 (%):" },
+      sections: { language: "\uC5B8\uC5B4" },
+      subSections: { kawarp: "\uC560\uB2C8\uBA54\uC774\uC158 \uBC30\uACBD", sidebars: "\uC0AC\uC774\uB4DC\uBC14", vinyl: "\uBC14\uC774\uB2D0" },
+      vinyl: { npv: "\uC0AC\uC774\uB4DC\uBC14 \uBC14\uC774\uB2D0:", playbar: "\uD50C\uB808\uC774\uC5B4 \uBC14\uC774\uB2D0:", cinema: "\uC2DC\uB124\uB9C8 \uBAA8\uB4DC \uBC14\uC774\uB2D0:", miniPlayer: "\uBBF8\uB2C8 \uD50C\uB808\uC774\uC5B4 \uBC14\uC774\uB2D0:", speed: "\uD55C \uBC14\uD034\uB2F9 \uCD08:" },
+      dropdown: { engineTiles: "\uD074\uB798\uC2DD" },
+      ui: { leftSidebarBlur: "\uC67C\uCABD \uC0AC\uC774\uB4DC\uBC14 \uB4A4 \uD750\uB9AC\uAC8C:", leftSidebarBlurAmount: "\uC67C\uCABD \uC0AC\uC774\uB4DC\uBC14 \uD750\uB9BC (px):", rightSidebarBlur: "\uC624\uB978\uCABD \uC0AC\uC774\uB4DC\uBC14 \uB4A4 \uD750\uB9AC\uAC8C:", rightSidebarBlurAmount: "\uC624\uB978\uCABD \uC0AC\uC774\uB4DC\uBC14 \uD750\uB9BC (px):", localFilesTransparent: "\uB85C\uCEEC \uD30C\uC77C \uCE74\uB4DC \uD22C\uBA85:" },
+      tooltips: {
+        language: "\u300CSpotify \uB530\uB974\uAE30\u300D\uB294 \uC571\uC758 \uC5B8\uC5B4\uB97C \uC0AC\uC6A9\uD558\uACE0, \u300C\uC0AC\uC6A9\uC790 \uC9C0\uC815\u300D\uC740 \uC120\uD0DD\uD55C \uC5B8\uC5B4\uB85C \uD328\uB110\uC744 \uACE0\uC815\uD569\uB2C8\uB2E4.",
+        sidebarBlur: "\uC67C\uCABD\uACFC \uC624\uB978\uCABD \uC0AC\uC774\uB4DC\uBC14 \uB108\uBA38\uB85C \uBE44\uCE58\uB294 \uBC30\uACBD\uC744 \uD750\uB9AC\uAC8C \uD569\uB2C8\uB2E4.",
+        vinyl: "\uCEE4\uBC84 \uC544\uD2B8\uB97C \uD68C\uC804\uD558\uB294 \uB808\uCF54\uB4DC\uB85C \uBC14\uAFC9\uB2C8\uB2E4. \uC77C\uC2DC\uC815\uC9C0 \uC911\uC5D0\uB294 \uAC01\uB3C4\uB97C \uC720\uC9C0\uD569\uB2C8\uB2E4.",
+        localFilesTransparent: "\uB77C\uC774\uBE0C\uB7EC\uB9AC\uC758 \u300C\uB85C\uCEEC \uD30C\uC77C\u300D \uD56D\uBAA9 \uB4A4\uC5D0 \uC788\uB294 \uB2E8\uC0C9 \uBC30\uACBD\uC744 \uC5C6\uC571\uB2C8\uB2E4.",
+        hiResCover: "\uC0AC\uC6A9\uD560 \uC218 \uC788\uB294 \uAC00\uC7A5 \uD070 \uCEE4\uBC84\uB97C \uBD88\uB7EC\uC640 \uD070 \uCC3D\uC5D0\uC11C\uB3C4 \uBC30\uACBD\uC774 \uC120\uBA85\uD558\uAC8C \uC720\uC9C0\uB429\uB2C8\uB2E4. \uC774\uBBF8\uC9C0\uB97C \uB354 \uBE68\uB9AC \uBD88\uB7EC\uC624\uACE0 \uACE1 \uC804\uD658 \uC2DC \uC9C0\uC5F0\uC744 \uC5C6\uC560\uB824\uBA74 \uB044\uC138\uC694."
+      }
+    }
+  };
+  for (const code of Object.keys(LATE_STRINGS)) {
+    liquifyTranslations[code] = deepMerge(liquifyTranslations[code] || settingsCopy, LATE_STRINGS[code]);
+  }
+  var LANGUAGE_KEY = "liquify-language";
+  var LANGUAGE_NAMES = {
+    en: "English",
+    de: "Deutsch",
+    ru: "\u0420\u0443\u0441\u0441\u043A\u0438\u0439",
+    es: "Espa\xF1ol",
+    pt: "Portugu\xEAs",
+    tr: "T\xFCrk\xE7e",
+    hi: "\u0939\u093F\u0928\u094D\u0926\u0940",
+    sv: "Svenska",
+    ja: "\u65E5\u672C\u8A9E",
+    zh: "\u4E2D\u6587",
+    ko: "\uD55C\uAD6D\uC5B4"
+  };
+  function getAvailableLanguages() {
+    return Object.keys(liquifyTranslations).map((code) => ({
+      value: code,
+      label: LANGUAGE_NAMES[code] || code
+    }));
+  }
+  function getSpotifyLanguage() {
     const raw = (Spicetify?.Platform?.Session?.locale || Spicetify?.Platform?.Session?.language || navigator.language || "en").toString().toLowerCase();
     const base = raw.split(/[-_]/)[0];
     if (raw.startsWith("zh")) return "zh";
     if (raw.startsWith("pt")) return "pt";
     return base;
+  }
+  function getLanguageMode() {
+    const saved = localStorage.getItem(LANGUAGE_KEY);
+    if (!saved || saved === "auto") return "auto";
+    return liquifyTranslations[saved] ? saved : "auto";
+  }
+  function getClientLanguage() {
+    const mode = getLanguageMode();
+    return mode === "auto" ? getSpotifyLanguage() : mode;
+  }
+  function getEffectiveLanguage() {
+    const lang = getClientLanguage();
+    return liquifyTranslations[lang] ? lang : "en";
+  }
+  function setLanguage(mode) {
+    localStorage.setItem(LANGUAGE_KEY, mode);
+    window.dispatchEvent(new Event("liquifyLanguageChanged"));
   }
   function getTranslation() {
     const lang = getClientLanguage();
@@ -2172,12 +3549,12 @@
   function idbWrite(db, entries) {
     return new Promise((resolve) => {
       try {
-        const tx = db.transaction(MP_STORE, "readwrite");
-        const store = tx.objectStore(MP_STORE);
+        const tx2 = db.transaction(MP_STORE, "readwrite");
+        const store = tx2.objectStore(MP_STORE);
         for (const [key, value] of entries) store.put({ key, value });
-        tx.oncomplete = () => resolve(true);
-        tx.onerror = () => resolve(false);
-        tx.onabort = () => resolve(false);
+        tx2.oncomplete = () => resolve(true);
+        tx2.onerror = () => resolve(false);
+        tx2.onabort = () => resolve(false);
       } catch {
         resolve(false);
       }
@@ -2589,11 +3966,11 @@
     if (localStorage.getItem("liquify-onboarding-done")) return;
     let tries = 0;
     while (!document.getElementById("liquify-settings-gear-btn") && tries < 50) {
-      await sleep2(200);
+      await sleep(200);
       tries++;
     }
     if (!document.getElementById("liquify-settings-gear-btn")) return;
-    await sleep2(400);
+    await sleep(400);
     const container = document.createElement("div");
     container.id = "liquify-onboarding-root";
     document.body.appendChild(container);
@@ -2608,6 +3985,7 @@
   }
 
   // src/settings/features/accent.ts
+  var NOT_ICON_ONLY = ':not([class*="button-icon-only--small"])';
   var lastDynamicColor = null;
   function resetDynamicAccentCache() {
     lastDynamicColor = null;
@@ -2631,7 +4009,7 @@
     [class*="-legacy-button-primary"]:hover > [class*="-button-primary__inner"] { background-color: ${color} !important; }
     [class*="-legacy-button-primary"]:active > [class*="-button-primary__inner"] { background-color: ${color} !important; }
     [class*="-legacy-chip"]:hover > [class*="-legacy-chip__inner"][class*="--selected"] { background-color: ${color} !important; }
-    .encore-dark-theme .encore-inverted-light-set { --background-base: ${color} !important; }
+    .encore-dark-theme .encore-inverted-light-set${NOT_ICON_ONLY} { --background-base: ${color} !important; }
     .LegacyChip__LegacyChipComponent-sc-tzfq94-0:hover > .ChipInnerComponent-sm-selected.ChipInnerComponent-sm-selected { background-color: ${color} !important; }
     .button-module__button___hf2qg_marketplace { background-color: ${color} !important; }
     .custom-playing-bar { fill: ${color} !important; }
@@ -2642,7 +4020,7 @@
     localStorage.setItem("liquify-custom-color", color);
   }
   function applyDynamicAccent() {
-    const dynamicColor = getComputedStyle(document.documentElement).getPropertyValue("--accent-color").trim();
+    const dynamicColor = document.documentElement.style.getPropertyValue("--accent-color").trim();
     if (!dynamicColor || dynamicColor === lastDynamicColor) return;
     lastDynamicColor = dynamicColor;
     applyAccent2(dynamicColor);
@@ -2668,7 +4046,7 @@
     [class*="-legacy-button-primary"]:hover > [class*="-button-primary__inner"] { background-color: #3be477; }
     [class*="-legacy-button-primary"]:active > [class*="-button-primary__inner"] { background-color: #3be477; }
     [class*="-legacy-chip"]:hover > [class*="-legacy-chip__inner"][class*="--selected"] { background-color: #3be477; }
-    .encore-dark-theme .encore-inverted-light-set { --background-base: #FFFFFF !important; }
+    .encore-dark-theme .encore-inverted-light-set${NOT_ICON_ONLY} { --background-base: #FFFFFF !important; }
     .LegacyChip__LegacyChipComponent-sc-tzfq94-0:hover > .ChipInnerComponent-sm-selected.ChipInnerComponent-sm-selected { background-color: #f0f0f0 !important; }
     .button-module__button___hf2qg_marketplace { background-color: #FFFFFF !important; }
     .custom-playing-bar { fill: #3be477; }
@@ -2689,29 +4067,23 @@
   }
 
   // src/settings/features/artistScrollEffect.ts
+  var KEYFRAMES = "liquify-artist-scroll";
   function applyArtistScrollEffect(blur, brightness) {
     localStorage.setItem("liquify-artist-scroll-blur", String(blur));
     localStorage.setItem("liquify-artist-scroll-brightness", String(brightness));
     const style = ensureStyleTag("liquify-artist-scroll-effect");
     const brightnessVal = (brightness / 100).toFixed(2);
     style.textContent = `
-@keyframes BKunRzRbjJ8Sj3or {
-  0% {
-    filter: blur(0px) brightness(${brightnessVal});
-  }
-  80% {
-    -webkit-transform: scale(2);
-    transform: scale(2);
-    filter: blur(${blur}px) brightness(${brightnessVal});
-  }
+${HEADER_IMAGE} {
+  animation-name: ${KEYFRAMES};
 }
-@keyframes PM3yG5WWpg8FtBiq {
+@keyframes ${KEYFRAMES} {
   0% {
+    transform: none;
     filter: blur(0px) brightness(${brightnessVal});
   }
-  80% {
-    -webkit-transform: scale(2);
-    transform: scale(2);
+  40%, 100% {
+    transform: scale(1.5);
     filter: blur(${blur}px) brightness(${brightnessVal});
   }
 }`;
@@ -2730,42 +4102,6 @@
       reader.onerror = reject;
       reader.readAsDataURL(file);
     });
-  }
-  async function applyCustomBackground(file) {
-    const img = await fileToBase64(file);
-    const tmpImg = new Image();
-    tmpImg.src = img;
-    await new Promise((r) => {
-      tmpImg.onload = () => r();
-    });
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    const maxW = 1920, maxH = 1080;
-    let width = tmpImg.width, height = tmpImg.height;
-    if (width > maxW) {
-      height *= maxW / width;
-      width = maxW;
-    }
-    if (height > maxH) {
-      width *= maxH / height;
-      height = maxH;
-    }
-    canvas.width = width;
-    canvas.height = height;
-    ctx.drawImage(tmpImg, 0, 0, width, height);
-    const qualities = [0.92, 0.85, 0.7, 0.5];
-    for (const q2 of qualities) {
-      const compressed = canvas.toDataURL("image/jpeg", q2);
-      try {
-        localStorage.setItem("liquify-bg-image", compressed);
-        localStorage.setItem("liquify-bg-mode", "custom");
-        updateBackground();
-        return;
-      } catch (e) {
-      }
-    }
-    console.warn("Image too large for localStorage even at lowest quality");
   }
   async function applyCustomArtistBackground(file) {
     const img = await fileToBase64(file);
@@ -2803,7 +4139,7 @@
   }
   function applySavedBackground() {
     const mode = localStorage.getItem("liquify-bg-mode");
-    const image = localStorage.getItem("liquify-bg-image");
+    const image = getLibraryUrl();
     const bgUrl = localStorage.getItem("liquify-bg-url");
     const root = document.querySelector(".Root__top-container");
     if (!root) return;
@@ -2812,7 +4148,7 @@
   }
   function updateBackground() {
     const mode = localStorage.getItem("liquify-bg-mode") || "dynamic";
-    const image = localStorage.getItem("liquify-bg-image");
+    const image = getLibraryUrl();
     const bgUrl = localStorage.getItem("liquify-bg-url");
     const root = document.querySelector(".Root__top-container");
     if (root) {
@@ -2824,186 +4160,27 @@
     }
     window.dispatchEvent(new Event("liquifyBackgroundChange"));
   }
+  var ARTIST_BG_STYLE_ID = "liquify-artist-bg-style";
   function installArtistBackgroundController() {
-    const ORIGINALS = /* @__PURE__ */ new WeakMap();
-    const ART_SELECTOR = ".jiWxWueoicolJZnS";
     const STORAGE_KEY_MODE = "liquify-artist-bg-mode";
     const STORAGE_KEY_CUSTOM = "liquify-artist-bg-image";
     const STORAGE_KEY_URL = "liquify-artist-bg-url";
     const getSavedMode = () => localStorage.getItem(STORAGE_KEY_MODE) || "theme";
     const setSavedMode = (mode) => localStorage.setItem(STORAGE_KEY_MODE, mode);
-    const getCustomImage = () => localStorage.getItem(STORAGE_KEY_CUSTOM);
-    const getCustomUrl = () => localStorage.getItem(STORAGE_KEY_URL);
-    function isArtistPage() {
-      try {
-        return location && location.pathname && location.pathname.includes("/artist") || !!document.querySelector(ART_SELECTOR);
-      } catch {
-        return false;
-      }
-    }
-    function getImgElem(el) {
-      if (!el) return null;
-      if (el.tagName === "IMG") return el;
-      return el.querySelector?.("img") ?? null;
-    }
-    function saveOriginalIfNeeded(el) {
-      if (ORIGINALS.has(el)) return;
-      const img = getImgElem(el);
-      if (img) ORIGINALS.set(el, { type: "img", src: img.src || "" });
-      else {
-        const inlineBg = el.style.backgroundImage;
-        if (inlineBg) ORIGINALS.set(el, { type: "bg", bg: inlineBg });
-        else ORIGINALS.set(el, { type: "bg", bg: getComputedStyle(el).backgroundImage || "" });
-      }
-    }
-    function restoreOriginal(el) {
-      if (!ORIGINALS.has(el)) return;
-      const orig = ORIGINALS.get(el);
-      const img = getImgElem(el);
-      if (orig.type === "img" && img) img.src = orig.src || "";
-      else if (orig.type === "bg") {
-        const html = el;
-        html.style.backgroundImage = orig.bg || "";
-        html.style.backgroundRepeat = "";
-        html.style.backgroundSize = "";
-        html.style.backgroundPosition = "";
-      }
-    }
     function applyMode(mode) {
-      if (!isArtistPage()) return;
-      const nodes = document.querySelectorAll(ART_SELECTOR);
-      if (!nodes || nodes.length === 0) return;
-      const customImage = getCustomImage();
-      const customUrl = getCustomUrl();
-      nodes.forEach((el) => {
-        try {
-          saveOriginalIfNeeded(el);
-          const img = getImgElem(el);
-          el.classList.toggle("liquify-artist-banner-hidden", mode === "none");
-          el.style.opacity = "0";
-          if (mode === "theme") {
-            restoreOriginal(el);
-            el.style.opacity = "1";
-          } else if (mode === "custom" && customImage) {
-            if (img) img.src = customImage;
-            else {
-              const html = el;
-              html.style.backgroundImage = `url("${customImage}")`;
-              html.style.backgroundRepeat = "no-repeat";
-              html.style.backgroundSize = "cover";
-              html.style.backgroundPosition = "center center";
-            }
-            el.style.opacity = "1";
-          } else if (mode === "url" && customUrl) {
-            if (img) img.src = customUrl;
-            else {
-              const html = el;
-              html.style.backgroundImage = `url("${customUrl}")`;
-              html.style.backgroundRepeat = "no-repeat";
-              html.style.backgroundSize = "cover";
-              html.style.backgroundPosition = "center center";
-            }
-            el.style.opacity = "1";
-          } else if (mode === "none") {
-            el.style.opacity = "0";
-          } else {
-            restoreOriginal(el);
-            el.style.opacity = "1";
-          }
-        } catch (err) {
-          console.warn("applyMode element error", err);
-        }
-      });
+      const image = mode === "custom" ? localStorage.getItem(STORAGE_KEY_CUSTOM) : mode === "url" ? localStorage.getItem(STORAGE_KEY_URL) : null;
+      let css = "";
+      if (mode === "none") css = `${ARTIST_HEADER_IMAGE} { opacity: 0 !important; }`;
+      else if (image) {
+        css = `${ARTIST_HEADER_IMAGE} { background-image: url(${JSON.stringify(image)}) !important; background-position: center center !important; }`;
+      }
+      updateStyle(ARTIST_BG_STYLE_ID, css);
     }
     function applySavedModeIfArtist() {
-      if (!isArtistPage()) return;
       applyMode(getSavedMode());
     }
-    const bodyObserver = new MutationObserver((mutations) => {
-      let artistFound = false;
-      for (const m2 of mutations) {
-        if (m2.addedNodes && m2.addedNodes.length) {
-          for (const n of Array.from(m2.addedNodes)) {
-            if (!n || n.nodeType !== 1) continue;
-            if (!artistFound && (n.matches && n.matches(ART_SELECTOR) || n.querySelector && n.querySelector(ART_SELECTOR))) {
-              artistFound = true;
-            }
-          }
-        }
-        if (!artistFound && m2.type === "attributes" && m2.target?.matches?.(ART_SELECTOR)) artistFound = true;
-      }
-      if (artistFound) {
-        const obsAny = bodyObserver;
-        if (obsAny._debounce) clearTimeout(obsAny._debounce);
-        obsAny._debounce = setTimeout(() => {
-          applySavedModeIfArtist();
-          obsAny._debounce = null;
-        }, 60);
-      }
-    });
-    function startObservers() {
-      if (!document.body) return false;
-      bodyObserver.observe(document.body, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        attributeFilter: ["style", "src", "class"]
-      });
-      return true;
-    }
-    (function hookHistory() {
-      const wrap = (fn) => {
-        const orig = history[fn];
-        history[fn] = function(...args) {
-          const res = orig.apply(this, args);
-          setTimeout(() => {
-            if (isArtistPage()) applySavedModeIfArtist();
-          }, 80);
-          return res;
-        };
-      };
-      try {
-        wrap("pushState");
-        wrap("replaceState");
-      } catch {
-      }
-      window.addEventListener("popstate", () => setTimeout(() => isArtistPage() && applySavedModeIfArtist(), 80));
-    })();
-    (function installBgChangeHandler() {
-      const RETRY_COUNT = 4;
-      const RETRY_DELAY = 80;
-      let debounceTimer = null;
-      async function doApplyCustomWithRetries() {
-        if (getSavedMode() !== "custom") return;
-        if (!isArtistPage()) return;
-        for (let i2 = 0; i2 < RETRY_COUNT; i2++) {
-          try {
-            applyMode("custom");
-          } catch (e) {
-            console.warn("applyMode(custom) failed", i2, e);
-          }
-          await sleep2(RETRY_DELAY);
-        }
-      }
-      const anyWin = window;
-      window.removeEventListener("liquifyBackgroundChange", anyWin._liquifyArtistBgHandler || (() => {
-      }));
-      anyWin._liquifyArtistBgHandler = () => {
-        if (debounceTimer) clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => {
-          doApplyCustomWithRetries().catch(console.warn);
-          debounceTimer = null;
-        }, 60);
-      };
-      window.addEventListener("liquifyBackgroundChange", anyWin._liquifyArtistBgHandler);
-    })();
-    (function tryInit() {
-      if (!startObservers()) {
-        setTimeout(tryInit, 200);
-        return;
-      }
-      if (isArtistPage()) applySavedModeIfArtist();
-    })();
+    window.addEventListener("liquifyBackgroundChange", applySavedModeIfArtist);
+    applySavedModeIfArtist();
     return {
       applyMode,
       applySavedModeIfArtist,
@@ -3014,32 +4191,15 @@
     };
   }
 
-  // src/settings/features/backgroundAppearance.ts
-  function applyBackgroundBlur(px) {
-    document.documentElement.style.setProperty("--liquify-bg-blur", px + "px");
-    localStorage.setItem("liquify-bg-blur", String(px));
-  }
-  function ensureBackgroundBlurApplied() {
-    const saved = parseInt(localStorage.getItem("liquify-bg-blur") || "7", 10);
-    applyBackgroundBlur(saved);
-  }
-  function applyBackgroundBrightness(percent) {
-    document.documentElement.style.setProperty("--liquify-bg-brightness", percent + "%");
-    localStorage.setItem("liquify-bg-brightness", String(percent));
-  }
-  function ensureBackgroundBrightnessApplied() {
-    const saved = parseInt(localStorage.getItem("liquify-bg-brightness") || "45", 10);
-    applyBackgroundBrightness(saved);
-  }
-
   // src/settings/features/playbarCoverRadius.ts
   var PLAYBAR_COVER_BORDER_RADIUS_KEY = "liquify-playbar-cover-border-radius";
   var PLAYBAR_COVER_DEFAULTS = { borderRadius: 12 };
   var LEGACY_PLAYBAR_COVER_DEFAULT_RADIUS = 8;
+  var PLAYBAR_COVER_SLOT = '[data-testid="now-playing-widget"] [data-testid="CoverSlotCollapsed__container"]';
   function applyPlaybarCoverBorderRadius(px) {
     const css = `
-    .main-nowPlayingWidget-coverArtContainer { border-radius: ${px}px !important; }
-    .main-nowPlayingWidget-coverArtContainer img { border-radius: ${px}px !important; }
+    ${PLAYBAR_COVER_SLOT},
+    ${PLAYBAR_COVER_SLOT} .ar_EqL2QE56qHRlOjjRL { border-radius: ${px}px !important; }
   `;
     updateStyle("liquify-playbar-cover-radius", css);
     localStorage.setItem(PLAYBAR_COVER_BORDER_RADIUS_KEY, String(px));
@@ -3088,18 +4248,21 @@
     const mb = readNum(CCA_MARGIN_BOTTOM_KEY, CCA_DEFAULTS.marginBottom);
     const ml = readNum(CCA_MARGIN_LEFT_KEY, CCA_DEFAULTS.marginLeft);
     const css = `
-    :root .Root__top-container .main-nowPlayingWidget-nowPlaying .main-coverSlotCollapsed-container .cover-art,
-    :root .Root__top-container .main-nowPlayingWidget-nowPlaying .main-coverSlotCollapsed-container .VideoPlayer__container video {
+    ${PLAYBAR_COVER_SLOT} {
       width: ${w2}px !important;
       height: ${h2}px !important;
-      overflow: hidden;
-      object-fit: cover;
-      max-height: none;
-      max-width: none;
-    }
-    .main-nowPlayingWidget-coverArtContainer {
+      flex-shrink: 0;
       margin-bottom: ${mb}px !important;
       margin-left: ${ml}px !important;
+    }
+    ${PLAYBAR_COVER_SLOT} :is(div, button, img, video) {
+      width: 100% !important;
+      height: 100% !important;
+      max-width: none;
+      max-height: none;
+    }
+    ${PLAYBAR_COVER_SLOT} :is(img, video) {
+      object-fit: cover;
     }
   `;
     updateStyle("liquify-comfy-cover-art", css);
@@ -3109,26 +4272,38 @@
   function installCoverSwipe() {
     (() => {
       const anyWin = window;
-      const STYLE_ID10 = "cs-cover-swipe";
+      const STYLE_ID18 = "cs-cover-swipe";
       const TRACK_ID = "cs-track";
-      const DURATION = 300;
+      const TRAVEL = 2;
+      const DURATION = Math.round(300 * TRAVEL * 0.9);
+      const SETTLE = 190;
+      const TOTAL = DURATION + SETTLE;
+      const SLIDE_END = (DURATION / TOTAL * 100).toFixed(2);
+      const OVERSHOOT = 3.5;
       const FADE = 250;
       const CANVAS_SCALE = 1.1;
       const CANVAS_FADE = 500;
       const SAME_SONG_THRESHOLD = 3e3;
       const POST_CANVAS_GRACE = 600;
       const CANVAS_GAP_GRACE = 150;
-      const CANVAS_SEL = ".main-nowPlayingView-canvasVisualEnhancement";
+      const CANVAS_SEL = CANVAS_CONTAINER_SEL;
       const VIDEO_SEL = "#VideoPlayerNpv_ReactPortal";
-      const CINEMA_SEL = ".Root__cinema-view";
-      const CONTAINER_SEL = ".main-nowPlayingView-coverArtContainer";
-      document.getElementById(STYLE_ID10)?.remove();
+      const CINEMA_SEL = ".Gs2EwEu259e_Q_vcVyCx";
+      const CONTAINER_SEL = ".BGdcsJhkf4JOCIGu5one";
+      const SPOTIFY_COVER_SEL = ".p0UCDR70bGAS2xsqZuTq";
+      const SIDEBAR_SEL = ".D0qWErHdvHknfXqr6zOl";
+      document.getElementById(STYLE_ID18)?.remove();
       anyWin.__coverSwipeOff?.();
       const style = document.createElement("style");
-      style.id = STYLE_ID10;
+      style.id = STYLE_ID18;
       style.textContent = `
-        ${CONTAINER_SEL}:has(#${TRACK_ID}) .main-nowPlayingView-coverArt {
+        ${CONTAINER_SEL}:has(#${TRACK_ID}) > ${SPOTIFY_COVER_SEL} {
             visibility: hidden !important;
+        }
+        /* user.css rims the slot itself; with the swipe on each cover carries its
+           own rim (.cs-slot::after), and the slot's would stay put while they move. */
+        ${CONTAINER_SEL}:has(#${TRACK_ID})::after {
+            display: none !important;
         }
         #${TRACK_ID} {
             position: absolute;
@@ -3144,50 +4319,138 @@
            expands downward toward the canvas (top-anchored scale) and collapses
            back into itself when the canvas leaves. */
         #${TRACK_ID}.cs-hidden { opacity: 0; transform: scale(${CANVAS_SCALE}); }
-        #${TRACK_ID}::after {
+        /* The rim belongs to each cover, not to the track. On the track it was a
+           fixed frame around the artwork area \u2014 fine while the swipe was clipped
+           to that area, but now that a cover leaves the panel it has to take its
+           own edge with it. border-radius: inherit so it follows whatever shape
+           the slot is, square or the vinyl option's circle. */
+        #${TRACK_ID} .cs-slot::after {
             content: '';
             position: absolute;
             inset: 0;
-            border-radius: 20px;
+            border-radius: inherit;
             box-shadow: var(--liquify-shadow);
             pointer-events: none;
             z-index: 10;
         }
+        /* A cover carries on past its own box and leaves the panel instead of
+           vanishing at the edge of the artwork. The neighbours are parked well
+           outside the sidebar (--cs-travel) and kept invisible until they are
+           actually part of a swipe \u2014 without that they would sit in plain view
+           either side of the cover, since nothing crops them here.
+
+           Nothing is clipped here, so the covers are free to travel across the
+           panel; the clipping happens at the sidebar instead (see below). */
         #${TRACK_ID} .cs-clip {
             position: absolute;
             inset: 0;
-            overflow: hidden;
+            overflow: visible;
             border-radius: 20px;
+            --cs-travel: ${TRAVEL * 100}%;
+        }
+        /* Where the travelling covers actually stop.
+           They have to leave their own box to be seen sliding, and anything that
+           overflows a scroll container is added to its scrollable width \u2014 which
+           is what made the whole sidebar draggable sideways. overflow-clip-margin
+           on the cover did not help: the expanded clip region counts again.
+           Clipping higher up does work, and clip rather than hidden is what
+           keeps these from becoming scroll containers of their own \u2014 the
+           vertical scrolling they do is untouched.
+
+           Which element actually cuts the cover short is not something to guess
+           at \u2014 Spotify nests several scrollers and wrappers between the artwork
+           and the sidebar, and naming them meant fixing one and being cut by the
+           next. unclipAncestors() walks the real chain at runtime and marks
+           every level that clips; this is what those levels then do.
+
+           clip with a margin rather than visible: these are scroll containers,
+           and an overflow-x of visible computes back to auto when the other axis
+           scrolls \u2014 which is what put the sidebar on a horizontal scrollbar in
+           the first place. Clipping keeps them from scrolling, and the margin is
+           what lets them keep painting outwards anyway. */
+        .cs-unclip {
+            overflow-x: clip !important;
+            overflow-clip-margin: 100vw !important;
+        }
+        /* A box that clips both ways without scrolling (the cover slot itself is
+           overflow:hidden) needs clip on both axes: next to a hidden y, clip on x
+           computes back to hidden and the margin is ignored, which stopped the
+           covers right at the slot's edges. */
+        .cs-unclip.cs-unclip-both {
+            overflow: clip !important;
         }
         #${TRACK_ID} .cs-slot {
+            position: absolute;
+            inset: 0;
+            border-radius: 20px;
+            will-change: transform;
+        }
+        /* The picture sits one level in rather than on the slot itself. The slot
+           owns transform for the swipe, and the vinyl option needs a transform
+           of its own to spin the artwork \u2014 one element cannot carry both. With
+           the vinyl off this face fills its slot exactly, so it changes nothing. */
+        #${TRACK_ID} .cs-face {
             position: absolute;
             inset: 0;
             background-size: cover;
             background-position: center;
             background-repeat: no-repeat;
-            border-radius: 20px;
-            will-change: transform;
+            border-radius: inherit;
         }
         #${TRACK_ID} .cs-current { transform: translateX(0); }
-        #${TRACK_ID} .cs-next    { transform: translateX(100%); }
-        #${TRACK_ID} .cs-prev    { transform: translateX(-100%); }
+        #${TRACK_ID} .cs-next    { transform: translateX(var(--cs-travel)); }
+        #${TRACK_ID} .cs-prev    { transform: translateX(calc(var(--cs-travel) * -1)); }
+        #${TRACK_ID} .cs-next,
+        #${TRACK_ID} .cs-prev    { visibility: hidden; }
+        /* The outgoing cover, which only has to leave. Unchanged curve and
+           unchanged duration \u2014 nobody sees it land, so it needs no settle. */
         #${TRACK_ID}.cs-animating .cs-slot {
-            transition: transform ${DURATION}ms cubic-bezier(.4,0,.2,1);
+            transition: transform ${DURATION}ms cubic-bezier(.4, 0, .2, 1);
         }
-        #${TRACK_ID}.cs-animating.cs-going-next .cs-current { transform: translateX(-100%); }
+        /* The arriving cover gets the spring, as two legs rather than one curve
+           (see SETTLE). The first runs to ${SLIDE_END}% of the total, which is
+           exactly the old ${DURATION}ms, on exactly the old easing \u2014 so the
+           swipe travels at the pace it always did. It stops ${OVERSHOOT}% of a
+           cover width past centre, and the remaining ${SETTLE}ms ease that back. */
+        @keyframes liquifyCsArriveNext {
+            0%   { transform: translateX(var(--cs-travel)); animation-timing-function: cubic-bezier(.4, 0, .2, 1); }
+            ${SLIDE_END}% { transform: translateX(-${OVERSHOOT}%); animation-timing-function: cubic-bezier(.33, 0, .25, 1); }
+            100% { transform: translateX(0); }
+        }
+        @keyframes liquifyCsArrivePrev {
+            0%   { transform: translateX(calc(var(--cs-travel) * -1)); animation-timing-function: cubic-bezier(.4, 0, .2, 1); }
+            ${SLIDE_END}% { transform: translateX(${OVERSHOOT}%); animation-timing-function: cubic-bezier(.33, 0, .25, 1); }
+            100% { transform: translateX(0); }
+        }
+        #${TRACK_ID}.cs-animating.cs-going-next .cs-next { animation: liquifyCsArriveNext ${TOTAL}ms both; }
+        #${TRACK_ID}.cs-animating.cs-going-prev .cs-prev { animation: liquifyCsArrivePrev ${TOTAL}ms both; }
+        /* Only the two slots taking part are revealed. Showing every slot would
+           put the idle third one on screen too, stacked on the outgoing one.
+           visibility isn't interpolated, so each appears at its parked position
+           \u2014 which is off the panel \u2014 and slides in from there. */
+        #${TRACK_ID}.cs-animating.cs-going-next .cs-current,
+        #${TRACK_ID}.cs-animating.cs-going-next .cs-next,
+        #${TRACK_ID}.cs-animating.cs-going-prev .cs-current,
+        #${TRACK_ID}.cs-animating.cs-going-prev .cs-prev { visibility: visible; }
+        #${TRACK_ID}.cs-animating.cs-going-next .cs-current { transform: translateX(calc(var(--cs-travel) * -1)); }
         #${TRACK_ID}.cs-animating.cs-going-next .cs-next    { transform: translateX(0); }
-        #${TRACK_ID}.cs-animating.cs-going-prev .cs-current { transform: translateX(100%); }
+        #${TRACK_ID}.cs-animating.cs-going-prev .cs-current { transform: translateX(var(--cs-travel)); }
         #${TRACK_ID}.cs-animating.cs-going-prev .cs-prev    { transform: translateX(0); }
+        /* Lives inside the current slot's face (see crossfadeToNew), so it takes
+           that face's shape and, with the vinyl option on, its rotation \u2014 the
+           two pictures cross-fade on one turning disc instead of the overlay
+           standing still as a square on top of it. Below the vinyl furniture's
+           z-index 3, so the label and grooves stay on top of both. */
         #${TRACK_ID} .cs-fade-overlay {
             position: absolute;
             inset: 0;
             background-size: cover;
             background-position: center;
             background-repeat: no-repeat;
-            border-radius: 20px;
+            border-radius: inherit;
             opacity: 0;
             pointer-events: none;
-            z-index: 5;
+            z-index: 1;
         }
         #${TRACK_ID} .cs-fade-overlay.cs-fade-in {
             transition: opacity ${FADE}ms ease;
@@ -3195,6 +4458,29 @@
         }
     `;
       document.head.appendChild(style);
+      anyWin.liquifyCoverSwipeDebug = () => {
+        const start2 = document.querySelector(CONTAINER_SEL);
+        if (!start2) return "cover container not found";
+        const rows = [];
+        for (let el = start2; el && el !== document.documentElement; el = el.parentElement) {
+          const cs = getComputedStyle(el);
+          const clips = cs.overflowX !== "visible";
+          const containing = cs.transform !== "none" || cs.filter !== "none" || cs.backdropFilter !== "none" || cs.contain !== "none";
+          if (!clips && !containing) continue;
+          const r = el.getBoundingClientRect();
+          rows.push({
+            el: el.className || el.tagName,
+            overflowX: cs.overflowX,
+            clipMargin: cs.overflowClipMargin || "",
+            transform: cs.transform === "none" ? "" : "yes",
+            filter: cs.filter === "none" ? "" : "yes",
+            backdrop: cs.backdropFilter === "none" ? "" : "yes",
+            left: Math.round(r.left),
+            right: Math.round(r.right)
+          });
+        }
+        return { coverBox: start2.getBoundingClientRect().toJSON(), clippers: rows };
+      };
       const trackToImageUrl = (t) => {
         if (!t) return "";
         const ctx = t.contextTrack || t;
@@ -3227,7 +4513,7 @@
         const url = trackToImageUrl(getCurrentItem());
         if (url) return url;
         const cont = document.querySelector(CONTAINER_SEL);
-        return cont?.querySelector(".main-nowPlayingView-coverArt img")?.src || cont?.querySelector("img")?.src || "";
+        return cont?.querySelector(`${SPOTIFY_COVER_SEL} img`)?.src || cont?.querySelector("img")?.src || "";
       };
       const getCurrentUri = () => trackToUri(getCurrentItem());
       const getNextItem = () => {
@@ -3259,7 +4545,7 @@
       const getPrevCoverUrl = () => trackToImageUrl(getPrevItem());
       const getNextUri = () => trackToUri(getNextItem());
       const getPrevUri = () => trackToUri(getPrevItem());
-      let prevUrl = "", currentUrl = "", nextUrl = "";
+      let prevUrl = "", currentUrl2 = "", nextUrl = "";
       let prevUri = "", currentUri = "", nextUri = "";
       let track = null, clip = null, prevSlot = null, currentSlot = null, nextSlot = null;
       let mountedContainer = null, origPosition = "";
@@ -3274,7 +4560,8 @@
       let lastCanvasOffAt = 0;
       const setSlot = (slot, url) => {
         if (!slot) return;
-        slot.style.backgroundImage = url ? `url("${url}")` : "";
+        const face = slot.querySelector(".cs-face") || slot;
+        face.style.backgroundImage = url ? `url("${url}")` : "";
       };
       const syncFromTruth = () => {
         if (!track) return;
@@ -3282,8 +4569,8 @@
         const realUrl = getCurrentCoverUrl();
         if (realUri && realUri !== currentUri) {
           currentUri = realUri;
-          currentUrl = realUrl;
-          setSlot(currentSlot, currentUrl);
+          currentUrl2 = realUrl;
+          setSlot(currentSlot, currentUrl2);
         }
         const nNext = getNextCoverUrl(), nNextUri = getNextUri();
         if (nNextUri !== nextUri) {
@@ -3327,6 +4614,24 @@
         return checkVideoVisible();
       };
       const inCanvasGrace = () => Date.now() - lastCanvasOffAt < POST_CANVAS_GRACE;
+      const UNCLIP_CLASS = "cs-unclip";
+      const UNCLIP_BOTH_CLASS = "cs-unclip-both";
+      let unclipped = [];
+      const unclipAncestors = (from) => {
+        clearUnclipped();
+        const stop = document.querySelector(SIDEBAR_SEL);
+        for (let el = from; el && el !== stop; el = el.parentElement) {
+          const cs = getComputedStyle(el);
+          if (cs.overflowX === "visible") continue;
+          el.classList.add(UNCLIP_CLASS);
+          if (!/auto|scroll/.test(cs.overflowY)) el.classList.add(UNCLIP_BOTH_CLASS);
+          unclipped.push(el);
+        }
+      };
+      const clearUnclipped = () => {
+        for (const el of unclipped) el.classList.remove(UNCLIP_CLASS, UNCLIP_BOTH_CLASS);
+        unclipped = [];
+      };
       const mount = (container) => {
         if (track) return;
         mountedContainer = container;
@@ -3341,17 +4646,21 @@
         prevSlot = Object.assign(document.createElement("div"), { className: "cs-slot cs-prev" });
         currentSlot = Object.assign(document.createElement("div"), { className: "cs-slot cs-current" });
         nextSlot = Object.assign(document.createElement("div"), { className: "cs-slot cs-next" });
+        for (const slot of [prevSlot, currentSlot, nextSlot]) {
+          slot.appendChild(Object.assign(document.createElement("div"), { className: "cs-face" }));
+        }
         clip.append(prevSlot, currentSlot, nextSlot);
         track.appendChild(clip);
         container.appendChild(track);
-        currentUrl = getCurrentCoverUrl();
+        unclipAncestors(container);
+        currentUrl2 = getCurrentCoverUrl();
         currentUri = getCurrentUri();
         prevUrl = getPrevCoverUrl();
         prevUri = getPrevUri();
         nextUrl = getNextCoverUrl();
         nextUri = getNextUri();
         setSlot(prevSlot, prevUrl);
-        setSlot(currentSlot, currentUrl);
+        setSlot(currentSlot, currentUrl2);
         setSlot(nextSlot, nextUrl);
         canvasVisible = checkCanvasVisible();
         if (canvasVisible) {
@@ -3394,9 +4703,16 @@
         mountedContainer = null;
         animating = false;
         canvasVisible = false;
+        clearUnclipped();
       };
       const hideTrackForCanvas = () => {
         if (!track) return;
+        if (animating) {
+          setTimeout(() => {
+            if (canvasVisible) hideTrackForCanvas();
+          }, TOTAL);
+          return;
+        }
         const r = track.getBoundingClientRect();
         track.style.position = "fixed";
         track.style.inset = "auto";
@@ -3459,8 +4775,8 @@
         const truthUrl = getCurrentCoverUrl();
         if (truthUri && truthUri !== currentUri) {
           currentUri = truthUri;
-          currentUrl = truthUrl;
-          setSlot(currentSlot, currentUrl);
+          currentUrl2 = truthUrl;
+          setSlot(currentSlot, currentUrl2);
           prevUri = getPrevUri();
           prevUrl = getPrevCoverUrl();
           nextUri = getNextUri();
@@ -3489,18 +4805,18 @@
         setTimeout(() => {
           if (!track) return;
           if (dir === "next") {
-            prevUrl = currentUrl;
+            prevUrl = currentUrl2;
             prevUri = currentUri;
-            currentUrl = nextUrl;
+            currentUrl2 = nextUrl;
             currentUri = nextUri;
           } else {
-            nextUrl = currentUrl;
+            nextUrl = currentUrl2;
             nextUri = currentUri;
-            currentUrl = prevUrl;
+            currentUrl2 = prevUrl;
             currentUri = prevUri;
           }
           setSlot(prevSlot, prevUrl);
-          setSlot(currentSlot, currentUrl);
+          setSlot(currentSlot, currentUrl2);
           setSlot(nextSlot, nextUrl);
           void track.offsetWidth;
           track.classList.remove("cs-animating", "cs-going-next", "cs-going-prev");
@@ -3509,7 +4825,7 @@
             if (!track) return;
             refreshAdjacent();
           }, 150);
-        }, DURATION + 20);
+        }, TOTAL + 20);
       };
       const swipeWithKnownTarget = (dir, newUrl, newUri) => {
         if (!track || animating || canvasVisible) return;
@@ -3527,18 +4843,18 @@
         setTimeout(() => {
           if (!track) return;
           if (dir === "next") {
-            prevUrl = currentUrl;
+            prevUrl = currentUrl2;
             prevUri = currentUri;
-            currentUrl = newUrl;
+            currentUrl2 = newUrl;
             currentUri = newUri;
           } else {
-            nextUrl = currentUrl;
+            nextUrl = currentUrl2;
             nextUri = currentUri;
-            currentUrl = newUrl;
+            currentUrl2 = newUrl;
             currentUri = newUri;
           }
           setSlot(prevSlot, prevUrl);
-          setSlot(currentSlot, currentUrl);
+          setSlot(currentSlot, currentUrl2);
           setSlot(nextSlot, nextUrl);
           void track.offsetWidth;
           track.classList.remove("cs-animating", "cs-going-next", "cs-going-prev");
@@ -3547,7 +4863,7 @@
             if (!track) return;
             refreshAdjacent();
           }, 150);
-        }, DURATION + 20);
+        }, TOTAL + 20);
       };
       const crossfadeToNew = (newUrl, newUri) => {
         if (!track || !clip || animating || canvasVisible) return;
@@ -3555,7 +4871,7 @@
         const overlay = document.createElement("div");
         overlay.className = "cs-fade-overlay";
         overlay.style.backgroundImage = `url("${newUrl}")`;
-        clip.appendChild(overlay);
+        (currentSlot?.querySelector(".cs-face") || clip).appendChild(overlay);
         void overlay.offsetWidth;
         overlay.classList.add("cs-fade-in");
         setTimeout(() => {
@@ -3564,11 +4880,11 @@
             animating = false;
             return;
           }
-          prevUrl = currentUrl;
+          prevUrl = currentUrl2;
           prevUri = currentUri;
-          currentUrl = newUrl;
+          currentUrl2 = newUrl;
           currentUri = newUri;
-          setSlot(currentSlot, currentUrl);
+          setSlot(currentSlot, currentUrl2);
           overlay.remove();
           nextUri = getNextUri();
           nextUrl = getNextCoverUrl();
@@ -3694,15 +5010,267 @@
           if (origNext) Spicetify.Player.next = origNext;
           if (origBack) Spicetify.Player.back = origBack;
         }
-        document.getElementById(STYLE_ID10)?.remove();
+        document.getElementById(STYLE_ID18)?.remove();
         delete anyWin.__coverSwipeOff;
       };
     })();
   }
 
+  // src/settings/features/vinylCoverArt.ts
+  var STYLE_ID3 = "liquify-vinyl-style";
+  var NPV_COVER_SLOT = ".BGdcsJhkf4JOCIGu5one";
+  var CINEMA_COVER = ".KgyieS7hpRUjZvjbSy43";
+  var PLAY_STATE_KEY = "liquifyVinylPlayState";
+  var PLAYING_CLASS = "liquify-playing";
+  var VINYL_SPEED_KEY = "liquify-vinyl-speed";
+  var VINYL_SPEED_DEFAULT = 12;
+  var VINYL_SURFACES = {
+    npv: { key: "liquify-vinyl-npv" },
+    playbar: { key: "liquify-vinyl-playbar" },
+    cinema: { key: "liquify-vinyl-cinema" },
+    miniPlayer: { key: "liquify-vinyl-mini-player" }
+  };
+  function isVinylOn(surface) {
+    return readLS(VINYL_SURFACES[surface].key, "off") === "on";
+  }
+  function discFurniture(disc) {
+    return `
+${disc}::before,
+${disc}::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 3;
+}
+/* The pressed grooves, drawn rather than imaged. Cleared through the middle,
+   where the label sits. */
+${disc}::before {
+  background: repeating-radial-gradient(
+    circle at 50% 50%,
+    rgba(255, 255, 255, 0.055) 0 1px,
+    rgba(0, 0, 0, 0.14) 1px 3px
+  );
+  opacity: 0.5;
+  mask-image: radial-gradient(circle at 50% 50%, transparent 0 22%, black 26%);
+  -webkit-mask-image: radial-gradient(circle at 50% 50%, transparent 0 22%, black 26%);
+}
+/* Label and spindle in one paint: the dark hole sits over the accent disc. */
+${disc}::after {
+  background:
+    radial-gradient(circle at 50% 50%, #06080b 0 6.5%, transparent 6.6%),
+    radial-gradient(circle at 50% 50%, var(--accent-color, #1ed760) 0 17%, transparent 17.1%);
+}`;
+  }
+  function vinylCss(disc, art) {
+    return `
+${disc} {
+  border-radius: 50% !important;
+  overflow: hidden !important;
+  position: relative;
+}
+${art} {
+  border-radius: 50% !important;
+  /* Paused rather than stopped, so it holds its angle while the music does \u2014
+     the animation runs from the moment the element exists, only its play state
+     moves. */
+  animation: liquify-vinyl-spin var(--liquify-vinyl-spin, 12s) linear infinite;
+  animation-play-state: paused;
+}
+html.${PLAYING_CLASS} ${art} { animation-play-state: running; }
+${discFurniture(disc)}`;
+  }
+  function buildCss() {
+    const parts = [];
+    if (isVinylOn("npv")) {
+      const slot = `${NPV_COVER_SLOT}:not(:has(#cs-track))`;
+      parts.push(vinylCss(slot, `${slot} img`));
+      parts.push(`
+#cs-track .cs-slot { border-radius: 50% !important; }
+#cs-track .cs-face {
+  border-radius: 50% !important;
+  animation: liquify-vinyl-spin var(--liquify-vinyl-spin, 12s) linear infinite;
+  animation-play-state: paused;
+}
+html.${PLAYING_CLASS} #cs-track .cs-face { animation-play-state: running; }
+${discFurniture("#cs-track .cs-face")}`);
+    }
+    if (isVinylOn("playbar")) {
+      const slot = `.Root__top-container ${PLAYBAR_COVER_SLOT}`;
+      parts.push(vinylCss(
+        `${slot} .ar_EqL2QE56qHRlOjjRL`,
+        `${slot} .ar_EqL2QE56qHRlOjjRL img`
+      ));
+      parts.push(`
+${slot} {
+  border-radius: 50% !important;
+  background: transparent !important;
+}`);
+    }
+    if (isVinylOn("cinema")) {
+      parts.push(vinylCss(
+        `${CINEMA_COVER} .uM9we09EwoxEy6yzw8aD`,
+        `${CINEMA_COVER} .uM9we09EwoxEy6yzw8aD img`
+      ));
+    }
+    if (parts.length === 0) return "";
+    const seconds = Math.max(1, readNum(VINYL_SPEED_KEY, VINYL_SPEED_DEFAULT));
+    return `:root { --liquify-vinyl-spin: ${seconds}s; }
+${parts.join("\n")}
+
+@keyframes liquify-vinyl-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  html.${PLAYING_CLASS} :is([class*="cover-art"], ${NPV_COVER_SLOT} img, ${CINEMA_COVER} img, .ar_EqL2QE56qHRlOjjRL img, .cs-face) { animation: none !important; }
+}`;
+  }
+  function installPlayState() {
+    const win = window;
+    if (win[PLAY_STATE_KEY]) return;
+    win[PLAY_STATE_KEY] = true;
+    const sync = () => {
+      const playing = Boolean(win.Spicetify?.Player?.isPlaying?.());
+      document.documentElement.classList.toggle(PLAYING_CLASS, playing);
+    };
+    sync();
+    win.Spicetify?.Player?.addEventListener?.("onplaypause", sync);
+    setInterval(sync, 1e3);
+  }
+  function applyCss() {
+    updateStyle(STYLE_ID3, buildCss());
+    refreshMiniPlayer();
+  }
+  function setVinyl(surface, mode) {
+    localStorage.setItem(VINYL_SURFACES[surface].key, mode === "on" ? "on" : "off");
+    applyCss();
+  }
+  function setVinylSpeed(seconds) {
+    localStorage.setItem(VINYL_SPEED_KEY, String(seconds));
+    applyCss();
+  }
+  function resetVinyl() {
+    for (const surface of Object.keys(VINYL_SURFACES)) {
+      localStorage.setItem(VINYL_SURFACES[surface].key, "off");
+    }
+    localStorage.setItem(VINYL_SPEED_KEY, String(VINYL_SPEED_DEFAULT));
+    applyCss();
+  }
+  function ensureVinylApplied() {
+    installPlayState();
+    applyCss();
+  }
+
+  // src/settings/features/miniPlayer.ts
+  var STYLE_ID4 = "liquify-mini-player-style";
+  var PLAYING_CLASS2 = "liquify-playing";
+  var INSTALLED_KEY = "liquifyMiniPlayerInstalled";
+  var RADIUS = 20;
+  var COVER_SELECTORS = [
+    '[data-testid="document-pip-cover-art-animation-container"] img',
+    ".E6aAqvl6gGgGLteK"
+  ];
+  var cover = (prefix = "") => COVER_SELECTORS.map((s2) => prefix + s2).join(", ");
+  var DISC = '[data-testid="document-pip-cover-art-animation-container"] > div';
+  function miniPlayerCss() {
+    if (!isVinylOn("miniPlayer")) {
+      return `${cover()} { border-radius: ${RADIUS}px !important; }`;
+    }
+    const spin = Math.max(1, readNum(VINYL_SPEED_KEY, VINYL_SPEED_DEFAULT));
+    return `
+${cover()} {
+  border-radius: 50% !important;
+  /* Paused rather than stopped, so it holds its angle while the music does. */
+  animation: liquify-vinyl-spin ${spin}s linear infinite;
+  animation-play-state: paused;
+}
+${cover(`html.${PLAYING_CLASS2} `)} { animation-play-state: running; }
+
+/* The grooves and the accent label are pseudo-elements, and <img> is a replaced
+   element that cannot have any \u2014 so they hang on the box that wraps the cover.
+   That box is left exactly as Spotify sizes and positions it. Giving it
+   position: relative blew the cover up to the picture's natural size and pushed
+   it past the panel, which says it is positioned already: it is its own anchor,
+   and the layers below need nothing added to reach it. */
+${discFurniture(DISC)}
+
+/* Everywhere else the disc box *is* the square cover, so the furniture's
+   inset: 0 lands on a circle. Here the box is wider than the picture inside it,
+   which stretched the grooves into an ellipse across the panel. Squared off and
+   centred instead \u2014 on the two layers themselves, which are out of flow, so this
+   cannot resize the cover the way touching the box did. */
+${DISC}::before,
+${DISC}::after {
+  inset: auto;
+  top: 50%;
+  left: 50%;
+  height: 100%;
+  width: auto;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+}
+
+@keyframes liquify-vinyl-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  ${cover()} { animation: none !important; }
+}`;
+  }
+  function pipWindow() {
+    return window.documentPictureInPicture?.window ?? null;
+  }
+  function applyToWindow(win) {
+    const doc = win.document;
+    if (!doc?.head) return;
+    let style = doc.getElementById(STYLE_ID4);
+    if (!style) {
+      style = doc.createElement("style");
+      style.id = STYLE_ID4;
+      doc.head.appendChild(style);
+    }
+    const css = miniPlayerCss();
+    if (style.textContent !== css) style.textContent = css;
+    const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent-color").trim();
+    if (accent) doc.documentElement.style.setProperty("--accent-color", accent);
+    doc.documentElement.classList.toggle(
+      PLAYING_CLASS2,
+      document.documentElement.classList.contains(PLAYING_CLASS2)
+    );
+  }
+  function refreshMiniPlayer() {
+    const win = pipWindow();
+    if (win) applyToWindow(win);
+  }
+  function installMiniPlayer() {
+    const anyWin = window;
+    if (anyWin[INSTALLED_KEY]) {
+      refreshMiniPlayer();
+      return;
+    }
+    const pip = anyWin.documentPictureInPicture;
+    if (!pip?.addEventListener) return;
+    anyWin[INSTALLED_KEY] = true;
+    pip.addEventListener("enter", (event) => {
+      const win = event.window ?? pipWindow();
+      if (!win) return;
+      applyToWindow(win);
+      const tick = win.setInterval(() => {
+        if (!pipWindow()) {
+          win.clearInterval(tick);
+          return;
+        }
+        applyToWindow(win);
+      }, 1e3);
+    });
+    refreshMiniPlayer();
+  }
+
   // src/settings/features/lyricsTranslator.ts
   function installLyricsTranslator() {
     const STORAGE_KEY2 = "liquify-lyrics-mode";
+    const LYRIC_LINE = ".mzAT53py1LJkDA4izCjN";
+    const LYRIC_TEXT = ".C8vlCbXzAR7qEMsoQG1r";
+    const LYRIC_ACTIVE_CLASS = "N6tht_GLY5suoRAtaggy";
     const CACHE = /* @__PURE__ */ new Map();
     const RESOLVED = /* @__PURE__ */ new Map();
     const LANG = (Spicetify?.Platform?.Session?.locale || navigator.language || "en").split("-")[0];
@@ -3815,10 +5383,10 @@
       }
       processing = true;
       const { showTranslation, showRoman } = getFlags(mode);
-      const parents = document.querySelectorAll(".lyrics-lyricsContent-lyric");
+      const parents = document.querySelectorAll(LYRIC_LINE);
       const jobs = [];
       for (const parent of Array.from(parents)) {
-        const textEl = parent.querySelector(".lyrics-lyricsContent-text");
+        const textEl = parent.querySelector(LYRIC_TEXT);
         if (!textEl) continue;
         const text = (textEl.textContent || "").trim();
         if (!text) continue;
@@ -3848,7 +5416,7 @@
           container.appendChild(rspan);
           parent.appendChild(container);
         }
-        const active = parent.classList.contains("lyrics-lyricsContent-active");
+        const active = parent.classList.contains(LYRIC_ACTIVE_CLASS);
         const color = active ? "var(--lyrics-color-active)" : "var(--lyrics-color-inactive)";
         const tEl = container.querySelector(".sp-lyric-translation-text");
         const rEl = container.querySelector(".sp-lyric-translation-roman");
@@ -3945,54 +5513,43 @@
   var PLAYER_WIDTH_MODE_KEY = "liquify-player-width";
   var PLAYER_CUSTOM_W_KEY = "liquify-player-custom-width";
   var PLAYER_CUSTOM_H_KEY = "liquify-player-custom-height";
+  var PLAYER_RADIUS_KEY = "liquify-player-radius";
   var DEFAULT_CUSTOM_WIDTH = 70;
   var DEFAULT_CUSTOM_HEIGHT = 80;
+  var DEFAULT_RADIUS = 30;
+  var PLAYER_BAR = ".z0qdvwslOFVOAihShLIq";
+  var STYLE_ID5 = "liquify-player-style";
   function getPlayerElement() {
-    return document.querySelector(".Root__now-playing-bar");
+    return document.querySelector(PLAYER_BAR);
   }
-  function applyPlayerWidth(mode) {
-    const player = getPlayerElement();
-    if (!player) return;
-    if (mode === "theme") {
-      player.style.width = "65%";
-      player.style.margin = "0 auto 5px";
-      player.style.height = "";
-    } else if (mode === "default") {
-      player.style.width = "unset";
-      player.style.margin = "calc(var(--panel-gap) * -1)";
-      player.style.height = "";
+  function applyPlayerCss() {
+    const mode = localStorage.getItem(PLAYER_WIDTH_MODE_KEY) || "theme";
+    const radius = parseInt(localStorage.getItem(PLAYER_RADIUS_KEY) || String(DEFAULT_RADIUS), 10);
+    let size;
+    if (mode === "default") {
+      size = "width: calc(100% + var(--panel-gap) * 2); margin: calc(var(--panel-gap) * -1);";
     } else if (mode === "custom") {
       const w2 = parseFloat(localStorage.getItem(PLAYER_CUSTOM_W_KEY) || String(DEFAULT_CUSTOM_WIDTH));
       const h2 = parseInt(localStorage.getItem(PLAYER_CUSTOM_H_KEY) || String(DEFAULT_CUSTOM_HEIGHT), 10);
-      player.style.width = Number.isFinite(w2) ? w2 + "%" : DEFAULT_CUSTOM_WIDTH + "%";
-      player.style.height = Number.isFinite(h2) ? h2 + "px" : DEFAULT_CUSTOM_HEIGHT + "px";
-      player.style.margin = "0 auto 5px";
+      size = `width: ${Number.isFinite(w2) ? w2 : DEFAULT_CUSTOM_WIDTH}%; height: ${Number.isFinite(h2) ? h2 : DEFAULT_CUSTOM_HEIGHT}px; margin: 0 auto 5px;`;
+    } else {
+      size = "width: 65%; margin: 0 auto 5px;";
     }
+    updateStyle(
+      STYLE_ID5,
+      `.Root__top-container ${PLAYER_BAR} { ${size} border-radius: ${Number.isFinite(radius) ? radius : DEFAULT_RADIUS}px; }`
+    );
+  }
+  function applyPlayerWidth(mode) {
+    localStorage.setItem(PLAYER_WIDTH_MODE_KEY, mode);
+    applyPlayerCss();
   }
   function applyPlayerRadius(px) {
-    const player = getPlayerElement();
-    if (!player) return;
-    player.style.borderRadius = px + "px";
-    localStorage.setItem("liquify-player-radius", String(px));
+    localStorage.setItem(PLAYER_RADIUS_KEY, String(px));
+    applyPlayerCss();
   }
   function ensurePlayerApplied() {
-    const mode = localStorage.getItem(PLAYER_WIDTH_MODE_KEY) || "theme";
-    const radius = parseInt(localStorage.getItem("liquify-player-radius") || "30", 10);
-    const player = getPlayerElement();
-    if (player) {
-      applyPlayerWidth(mode);
-      applyPlayerRadius(radius);
-      return;
-    }
-    const obs = new MutationObserver(() => {
-      const found = getPlayerElement();
-      if (found) {
-        applyPlayerWidth(mode);
-        applyPlayerRadius(radius);
-        obs.disconnect();
-      }
-    });
-    obs.observe(document.body, { childList: true, subtree: true });
+    applyPlayerCss();
   }
 
   // src/settings/features/nextSongCard.ts
@@ -4396,7 +5953,7 @@
     window.addEventListener("resize", repositionCard);
     document.addEventListener("scroll", repositionCard, true);
     const observePlayer = async () => {
-      while (!getPlayerElement()) await sleep2(300);
+      while (!getPlayerElement()) await sleep(300);
       const player = getPlayerElement();
       if (player) {
         const ro = new ResizeObserver(repositionCard);
@@ -4405,7 +5962,7 @@
     };
     observePlayer();
     const waitForPlayer = async () => {
-      while (!Spicetify?.Player?.addEventListener) await sleep2(300);
+      while (!Spicetify?.Player?.addEventListener) await sleep(300);
       Spicetify.Player.addEventListener("songchange", () => {
         setTimeout(updateCard, 300);
       });
@@ -4419,8 +5976,10 @@
     });
     let cinemaObserver = null;
     let lastCinemaEl = null;
+    const CINEMA_SEL = ".Gs2EwEu259e_Q_vcVyCx";
+    const CINEMA_CONTROLS_HIDDEN = "fQmiHA0AxpagJx4dPiuu";
     function watchCinema() {
-      const el = document.querySelector(".Root__cinema-view");
+      const el = document.querySelector(CINEMA_SEL);
       if (el && el !== lastCinemaEl) {
         lastCinemaEl = el;
         if (cinemaObserver) cinemaObserver.disconnect();
@@ -4428,7 +5987,7 @@
           if (!card) return;
           card.classList.toggle(
             "nsc-cinema-hidden",
-            el.classList.contains("Root__cinema-view--controls-hidden")
+            el.classList.contains(CINEMA_CONTROLS_HIDDEN)
           );
         };
         cinemaObserver = new MutationObserver(apply);
@@ -4469,7 +6028,7 @@
       if (!card) return;
       card.classList.toggle(
         "nsc-watchfeed-hidden",
-        !!document.querySelector('[data-testid="watch-feed-view"]')
+        !!document.querySelector('[data-testid="watch-feed-view"], .un3PUeMx_xrIybGTBlt_')
       );
     }
     setInterval(watchFeed, 1e3);
@@ -4480,17 +6039,17 @@
   var NPVC_SHOW_ALWAYS_KEY = "liquify-npv-cover-show-always";
   var NPVC_BLUR_KEY = "liquify-npv-cover-blur";
   var NPVC_DEFAULTS = {
-    mode: "off",
+    mode: "outsideTrackInfo",
     showAlways: "no",
     blur: 7
   };
   function installNowPlayingViewCover() {
-    const TRACK_INFO_SEL = ".main-nowPlayingView-trackInfo.main-trackInfo-container";
-    const COVER_SOURCE_SEL = "img.main-image-image.cover-art-image";
-    const CANVAS_SEL = ".main-nowPlayingView-canvasVisualEnhancement";
-    const OUTSIDE_COVER_SEL = ".main-nowPlayingView-contextItemVisualEnhancement";
-    const OUTSIDE_STYLE_ID = "liquify-npv-outside-cover";
-    const OVER_CANVAS_STYLE_ID = "liquify-npv-over-canvas";
+    const TITLE_ROW = ".UXUskWTgjA0qL7pcA3ZO";
+    const TITLE_BOX = ".cPCPoUfABWzF8MgTHeZv";
+    const COVER_SLOT = ".jCysP9BT72Y3IxfwU5gD";
+    const CANVAS_VIDEO = ".A6FK744wQHPY6B6S2V1R > video";
+    const COVER_CLASS = "liquify-npv-cover";
+    const STYLE_ID18 = "liquify-npv-cover-style";
     function getMode() {
       return readLS(NPVC_MODE_KEY, NPVC_DEFAULTS.mode);
     }
@@ -4500,125 +6059,147 @@
     function getBlur() {
       return readNum(NPVC_BLUR_KEY, NPVC_DEFAULTS.blur);
     }
-    function isNpvVisible() {
-      const el = document.querySelector(CANVAS_SEL);
-      if (!hasMountedCanvasMedia(el)) return false;
-      const cs = window.getComputedStyle(el);
-      return cs.display !== "none" && cs.visibility !== "hidden";
+    function isCanvasPlaying() {
+      return hasMountedCanvasMedia(document.querySelector(CANVAS_CONTAINER_SEL));
     }
-    function removeTrackInfoCover() {
-      const target = document.querySelector(TRACK_INFO_SEL);
-      if (!target) return;
-      const wrap = target.querySelector(".liquify-npv-row");
-      if (!wrap) return;
-      const text = wrap.querySelector(".liquify-npv-text");
-      if (text) {
-        while (text.firstChild) target.appendChild(text.firstChild);
+    function coverUrl() {
+      const meta = Spicetify?.Player?.data?.item?.metadata || {};
+      const raw = meta.image_xlarge_url || meta.image_large_url || meta.image_url || meta.image_small_url || "";
+      return raw.startsWith("spotify:image:") ? `https://i.scdn.co/image/${raw.slice(14)}` : raw;
+    }
+    const LEAVE_MS = 220;
+    function removeCover() {
+      const covers = document.querySelectorAll(`.${COVER_CLASS}:not(.is-leaving)`);
+      if (covers.length === 0) return;
+      covers.forEach((el) => el.classList.add("is-leaving"));
+      setTimeout(() => {
+        covers.forEach((el) => el.remove());
+        if (!document.querySelector(`.${COVER_CLASS}`)) updateStyle(STYLE_ID18, "");
+      }, LEAVE_MS);
+    }
+    function placeCover(parent, mode) {
+      if (!parent) return;
+      const src = coverUrl();
+      let cover2 = parent.querySelector(`:scope > .${COVER_CLASS}:not(.is-leaving)`);
+      document.querySelectorAll(`.${COVER_CLASS}`).forEach((el) => {
+        if (el !== cover2) el.remove();
+      });
+      if (!cover2) {
+        cover2 = document.createElement("div");
+        cover2.className = COVER_CLASS;
+        const img2 = document.createElement("img");
+        img2.draggable = false;
+        img2.alt = "";
+        cover2.append(img2);
+        parent.prepend(cover2);
       }
-      wrap.remove();
+      cover2.dataset.mode = mode;
+      const img = cover2.querySelector("img");
+      if (src && img.src !== src) img.src = src;
     }
-    function applyTrackInfo() {
-      const target = document.querySelector(TRACK_INFO_SEL);
-      const source = document.querySelector(COVER_SOURCE_SEL);
-      const name = target?.querySelector(".main-trackInfo-name");
-      const artists = target?.querySelector(".main-trackInfo-artists");
-      if (!target || !source || !name || !artists) return;
-      let wrap = target.querySelector(".liquify-npv-row");
-      let cover = target.querySelector(".liquify-npv-cover");
-      let text = target.querySelector(".liquify-npv-text");
-      if (!wrap) {
-        wrap = document.createElement("div");
-        wrap.className = "liquify-npv-row";
-        wrap.style.cssText = "display:flex;align-items:center;gap:12px;width:100%;min-width:0;";
-        cover = document.createElement("img");
-        cover.className = "liquify-npv-cover";
-        cover.style.cssText = "width:56px;height:56px;min-width:56px;object-fit:cover;border-radius:10px;display:block;";
-        cover.draggable = false;
-        text = document.createElement("div");
-        text.className = "liquify-npv-text";
-        text.style.cssText = "display:flex;flex-direction:column;justify-content:center;min-width:0;flex:1;overflow:hidden;";
-        name.style.minWidth = "0";
-        artists.style.minWidth = "0";
-        text.append(name, artists);
-        wrap.append(cover, text);
-        target.replaceChildren(wrap);
+    const BASE_CSS = `
+.${COVER_CLASS} {
+  position: relative;
+  overflow: hidden;
+  animation: liquify-npv-cover-in 420ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.${COVER_CLASS} > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+.${COVER_CLASS}::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: var(--liquify-shadow);
+  pointer-events: none;
+}
+.${COVER_CLASS}.is-leaving {
+  animation: liquify-npv-cover-out ${LEAVE_MS}ms ease-in both;
+}
+@keyframes liquify-npv-cover-in {
+  from { opacity: 0; transform: scale(0.8); }
+}
+@keyframes liquify-npv-cover-out {
+  to { opacity: 0; transform: scale(0.85); }
+}`;
+    function css(mode) {
+      if (mode === "trackInfo") {
+        return `${BASE_CSS}
+${TITLE_BOX}:has(> .${COVER_CLASS}) {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  column-gap: 12px;
+  align-items: center;
+}
+${TITLE_BOX} > .${COVER_CLASS} {
+  grid-row: 1 / span 2;
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
+}
+${TITLE_BOX}:has(> .${COVER_CLASS}) > :not(.${COVER_CLASS}) { grid-column: 2; }`;
       }
-      if (cover) cover.src = source.src;
-    }
-    function removeOutsideCover() {
-      updateStyle(OUTSIDE_STYLE_ID, "");
-    }
-    function applyOutsideCover() {
-      updateStyle(OUTSIDE_STYLE_ID, OUTSIDE_COVER_SEL + " { opacity: 1 !important; width: 70px !important; }");
-    }
-    function removeOverCanvas() {
-      updateStyle(OVER_CANVAS_STYLE_ID, "");
-    }
-    function applyOverCanvas() {
-      const blur = getBlur();
-      updateStyle(OVER_CANVAS_STYLE_ID, [
-        ".main-nowPlayingView-coverArtContainer .main-nowPlayingView-coverArtVisualEnhancement { opacity: 1 !important; }",
-        ".main-nowPlayingView-coverArtVisualEnhancement { visibility: visible !important; }",
-        ".main-nowPlayingView-coverArtVisualEnhancement { left: 0 !important; opacity: 1 !important; padding-inline: 16px !important; position: absolute !important; right: 0 !important; z-index: 2 !important; }",
-        ".main-nowPlayingView-coverArtContainer { margin-top: 90px !important; }",
-        ".canvasVideoContainerNPV>video { filter: blur(" + blur + "px) !important; }"
-      ].join("\n"));
-    }
-    function removeAll() {
-      removeTrackInfoCover();
-      removeOutsideCover();
-      removeOverCanvas();
+      if (mode === "outsideTrackInfo") {
+        return `${BASE_CSS}
+${TITLE_ROW} > .${COVER_CLASS} {
+  flex: none;
+  align-self: center;
+  width: 70px;
+  height: 70px;
+  margin-right: 12px;
+  border-radius: 14px;
+}`;
+      }
+      return `${BASE_CSS}
+${COVER_SLOT} > .${COVER_CLASS} {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: 20px;
+}
+${CANVAS_VIDEO} { filter: blur(${getBlur()}px); }`;
     }
     function apply() {
       const mode = getMode();
       if (mode === "off") {
-        removeAll();
+        removeCover();
         return;
       }
-      if (mode === "overCanvas") {
-        removeTrackInfoCover();
-        removeOutsideCover();
-        if (!isNpvVisible()) {
-          removeOverCanvas();
-          return;
-        }
-        applyOverCanvas();
+      const canvas = isCanvasPlaying();
+      if (!canvas && (mode === "overCanvas" || !getShowAlways())) {
+        removeCover();
         return;
       }
-      if (!getShowAlways() && !isNpvVisible()) {
-        removeAll();
-        return;
-      }
-      removeOverCanvas();
-      if (mode === "trackInfo") {
-        removeOutsideCover();
-        applyTrackInfo();
-      } else if (mode === "outsideTrackInfo") {
-        removeTrackInfoCover();
-        applyOutsideCover();
-      }
+      const parent = mode === "trackInfo" ? document.querySelector(TITLE_BOX) : mode === "outsideTrackInfo" ? document.querySelector(TITLE_ROW) : document.querySelector(COVER_SLOT);
+      placeCover(parent, mode);
+      updateStyle(STYLE_ID18, css(mode));
     }
     (async () => {
-      while (!Spicetify?.Player?.addEventListener) await sleep2(300);
+      while (!Spicetify?.Player?.addEventListener) await sleep(300);
       Spicetify.Player.addEventListener("songchange", () => {
         setTimeout(apply, 400);
         setTimeout(apply, 1e3);
       });
     })();
+    setInterval(apply, 1500);
     window.addEventListener("liquifyNpvcUpdate", () => {
-      removeAll();
+      removeCover();
       setTimeout(apply, 100);
     });
     apply();
-    setTimeout(apply, 1e3);
-    setTimeout(apply, 3e3);
   }
 
   // src/settings/features/actionBarBox.ts
-  var STYLE_ID2 = "liquify-action-bar-box-style";
+  var STYLE_ID6 = "liquify-action-bar-box-style";
+  var ACTION_BAR = ".WUHV3yvmh_gdGie5wFp4";
   function updateActionBarBoxCss(show) {
-    const css = show ? "" : ".main-actionBar-ActionBar { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; box-shadow: none !important; }";
-    updateStyle(STYLE_ID2, css);
+    const css = show ? "" : `${ACTION_BAR} { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; box-shadow: none !important; }`;
+    updateStyle(STYLE_ID6, css);
   }
   function applyActionBarBox(mode) {
     const m2 = mode === "show" ? "show" : "hide";
@@ -4635,7 +6216,7 @@
   var BACKDROP_BLUR_KEY = "liquify-backdrop-blur";
   var GLASS_BLUR_DEFAULT = 2;
   var BACKDROP_BLUR_DEFAULT = 32;
-  function applyCss() {
+  function applyCss2() {
     const glass = readNum(GLASS_BLUR_KEY, GLASS_BLUR_DEFAULT);
     const backdrop = readNum(BACKDROP_BLUR_KEY, BACKDROP_BLUR_DEFAULT);
     updateStyle(
@@ -4645,22 +6226,211 @@
   }
   function setGlassBlur(px) {
     localStorage.setItem(GLASS_BLUR_KEY, String(px));
-    applyCss();
+    applyCss2();
   }
   function setBackdropBlur(px) {
     localStorage.setItem(BACKDROP_BLUR_KEY, String(px));
-    applyCss();
+    applyCss2();
   }
   function ensureGlassBlurApplied() {
-    applyCss();
+    applyCss2();
+  }
+
+  // src/settings/features/sidebarBlur.ts
+  var STYLE_ID7 = "liquify-sidebar-blur-style";
+  var SIDEBAR_BLUR_DEFAULT = 24;
+  var SIDEBARS = {
+    left: {
+      key: "liquify-sidebar-blur-left",
+      amountKey: "liquify-sidebar-blur-left-amount",
+      selector: ".bQsutxbyIOatthweRHfK"
+    },
+    right: {
+      key: "liquify-sidebar-blur-right",
+      amountKey: "liquify-sidebar-blur-right-amount",
+      selector: ".D0qWErHdvHknfXqr6zOl"
+    }
+  };
+  function isSidebarBlurOn(side) {
+    return readLS(SIDEBARS[side].key, "off") === "on";
+  }
+  function readSidebarBlurAmount(side) {
+    return readNum(SIDEBARS[side].amountKey, SIDEBAR_BLUR_DEFAULT);
+  }
+  function applyCss3() {
+    const rules = [];
+    for (const side of Object.keys(SIDEBARS)) {
+      if (!isSidebarBlurOn(side)) continue;
+      const px = readSidebarBlurAmount(side);
+      rules.push(
+        `${SIDEBARS[side].selector} {
+  backdrop-filter: blur(${px}px) !important;
+  -webkit-backdrop-filter: blur(${px}px) !important;
+}`
+      );
+    }
+    updateStyle(STYLE_ID7, rules.join("\n\n"));
+  }
+  function setSidebarBlur(side, mode) {
+    localStorage.setItem(SIDEBARS[side].key, mode === "on" ? "on" : "off");
+    applyCss3();
+  }
+  function setSidebarBlurAmount(side, px) {
+    localStorage.setItem(SIDEBARS[side].amountKey, String(px));
+    applyCss3();
+  }
+  function resetSidebarBlur() {
+    for (const side of Object.keys(SIDEBARS)) {
+      localStorage.setItem(SIDEBARS[side].key, "off");
+      localStorage.setItem(SIDEBARS[side].amountKey, String(SIDEBAR_BLUR_DEFAULT));
+    }
+    applyCss3();
+  }
+  function ensureSidebarBlurApplied() {
+    applyCss3();
+  }
+
+  // src/settings/features/fonts.ts
+  var FONT_BODY_KEY = "liquify-font-body";
+  var FONT_HEADING_KEY = "liquify-font-heading";
+  var FONT_DEFAULT = "default";
+  var STYLE_ID8 = "liquify-fonts-style";
+  var FAMILY_LINK_ID = "liquify-font-families";
+  var PREVIEW_LINK_ID = "liquify-font-previews";
+  var FONT_CATEGORIES = [
+    "sans-serif",
+    "serif",
+    "display",
+    "handwriting",
+    "monospace"
+  ];
+  var CATALOGUE = {
+    "sans-serif": "Roboto,Open Sans,Google Sans,Inter,Montserrat,Poppins,Lato,Noto Sans JP,Arimo,Roboto Condensed,Oswald,Noto Sans,DM Sans,Raleway,Nunito,Nunito Sans,Rubik,Archivo Black,Manrope,Outfit,Ubuntu,Kanit,Noto Sans KR,Work Sans,PT Sans,Bebas Neue,Noto Sans TC,Prompt,Plus Jakarta Sans,Figtree,Bricolage Grotesque,Saira,Mulish,Barlow,Jost,Quicksand,Source Sans 3,Share Tech,Smooch Sans,Karla,IBM Plex Sans,Archivo,Space Grotesk,Fira Sans,Titillium Web,Heebo,Fjalla One,Noto Color Emoji,Google Sans Flex,Noto Sans SC,Libre Franklin,Barlow Condensed,Anton,Josefin Sans,Public Sans,Cairo,Lexend,Mukta,Sora,Assistant,Hind Siliguri,Inter Tight,Schibsted Grotesk,Cabin,Roboto Flex,Nanum Gothic,Noto Sans Khmer,Urbanist,Dosis,Rajdhani,Noto Sans Telugu,Orbitron,Exo 2,Ramabhadra,Red Hat Display,M PLUS Rounded 1c,Fredoka,Anek Telugu,Geist,Hind,Oxygen,Tajawal,M PLUS 1p,Instrument Sans,PT Sans Narrow,Overpass,Barlow Semi Condensed,Merriweather Sans,Teko,Noto Sans Arabic,Abel,Noto Sans Thai,Asap,Hanken Grotesk,Maven Pro,Chakra Petch,League Spartan,Rethink Sans,Alumni Sans,Onest,Play,Zen Kaku Gothic New,Questrial,ABeeZee,Lexend Deca,Archivo Narrow,Almarai,Exo,Be Vietnam Pro,Albert Sans,Syne,Sofia Sans,Saira Condensed,Noto Sans Tamil,IBM Plex Sans Arabic,Epilogue,Varela Round,Unbounded,Red Hat Text,Geologica,Zen Maru Gothic,Viga,Russo One,Yanone Kaffeesatz,Sarabun,Noto Kufi Arabic,Fira Sans Condensed,Signika,LINE Seed JP,News Cycle,Alegreya Sans,Catamaran,Atkinson Hyperlegible,Noto Sans Display,Hammersmith One,Montserrat Alternates,Chivo,IBM Plex Sans Condensed,Acme,Khand,Encode Sans,Alata,Kumbh Sans,Changa,Noto Sans Devanagari,Readex Pro,Tenor Sans,Gothic A1,Cantarell,Advent Pro,Hind Madurai,Sawarabi Gothic,Asap Condensed,Golos Text,Lexend Giga,PT Sans Caption,M PLUS 1,Biryani,Sen,Sofia Sans Condensed,Noto Sans Mono,Antonio,M PLUS U,Rubik Mono One,Vazirmatn,League Gothic,Philosopher,Alexandria,Signika Negative,Quantico,Francois One,Gruppo,Noto Sans Bengali,Yantramanav,Actor,BIZ UDPGothic,Commissioner,Monda,Encode Sans Condensed,Jura,Ropa Sans,Kosugi Maru,Ubuntu Condensed,Didact Gothic,Istok Web,Bai Jamjuree,Paytone One,Krub,Amaranth,Radio Canada,Quattrocento Sans,Lalezar,Noto Sans Hebrew,El Messiri,Pathway Gothic One,Saira Extra Condensed,Black Han Sans,Noto Sans HK,Secular One,Ubuntu Sans,Mitr,Noto Sans Malayalam,Arsenal,Michroma,Hind Guntur,Radio Canada Big,Belleza,Anek Bangla,Six Caps,Blinker,IBM Plex Sans Thai,Georama,Jua,Hind Vadodara,Fira Sans Extra Condensed,Cuprum,Afacad,Dongle,Syncopate,Host Grotesk,Palanquin,Sofia Sans Extra Condensed,Mona Sans,Noto Sans Symbols,Saira Semi Condensed,Mandali,Pragati Narrow,Varela,Gudea,Funnel Sans,Zen Kaku Gothic Antique,Mukta Malar,Mada,Economica,Belanosima,Electrolize,Alegreya Sans SC,Parkinsans,Reddit Sans,Khula,M PLUS 2,Wix Madefor Display,Julius Sans One,REM,Noto Sans Gujarati,Akshar,Murecho,Familjen Grotesk,Cabin Condensed,Italiana,Gantari,Andika,IBM Plex Sans JP,Tomorrow,Special Gothic Expanded One,Niramit,Reem Kufi,Fahkwang,Aldrich,Basic,Martel Sans,Do Hyeon,Noto Sans Sinhala,BenchNine,Ruda,Sansita,Geo,Spline Sans,Palanquin Dark,K2D,Fustat,Anuphan,Proza Libre,Spinnaker,Noto Sans Meetei Mayek,Anek Latin,Carlito,Atkinson Hyperlegible Next,Wix Madefor Text,Sofia Sans Semi Condensed,Sintony,Days One,Glory,Aclonica,ZCOOL XiaoWei,Noto Sans Kannada,Pontano Sans,Darker Grotesque,Livvic,Noto Sans Gurmukhi,BIZ UDGothic,Krona One,Lexend Exa,Armata,Athiti,Mochiy Pop One,Candal,DotGothic16,Sarala,ZCOOL KuaiLe,TikTok Sans,IBM Plex Sans KR,Metrophobic,Pathway Extreme,Noto Sans Oriya,Noto Sans Georgian,Rosario,AR One Sans,Afacad Flux,Alef,Nobile,Cal Sans,Kosugi,Yusei Magic,Share,Noto Sans Myanmar,Lexend Zetta,Pattaya,Allerta Stencil,Anek Devanagari,Telex,Reddit Sans Condensed,Marmelad,RocknRoll One,Average Sans,Alatsi,Marvel,Chiron GoRound TC,Encode Sans Expanded,Monomaniac One,Allerta,Inria Sans,Bayon,Magra,IBM Plex Sans Hebrew,Zalando Sans,Noto Sans Ol Chiki,Akatab,Lexend Peta,ZCOOL QingKe HuangYou,Amiko,Recursive,Noto Emoji,Anton SC,Mouse Memoirs,Cairo Play,Gowun Dodum,Kantumruy Pro,Scada,Gurajada,Mukta Mahee,Manjari,Rambla,Puritan,Zalando Sans Expanded,Jockey One,Carrois Gothic,Zen Kurenaido,Gotu,Encode Sans Semi Condensed,Kodchasan,Zain,Voltaire,Padauk,KoHo,Noto Sans Thai Looped,Zalando Sans SemiExpanded,Teachers,Cambay,Noto Sans Warang Citi,Noto Sans Symbols 2,Capriola,Miriam Libre,Voces,Stick No Bills,SUSE,Sulphur Point,Inclusive Sans,Jaldi,Kdam Thmor Pro,Tenali Ramakrishna,Special Gothic Condensed One,Kufam,B612,Nata Sans,Anaheim,Mukta Vaani,Noto Sans Bhaiksuki,Arya,Numans,Ysabeau Office,Genos,Federo,Doppio One,Sunflower,Sarpanch,Special Gothic,Farro,Mako,Molengo,Fresca,Shippori Antique,Inder,Mallanna,Noto Sans Armenian,Convergence,Port Lligat Sans,Shanti,Anta,Thasadith,Madimi One,Harmattan,Noto Sans Lao,Science Gothic,Imprima,Encode Sans Semi Expanded,Antic,Sansation,Gasoek One,Wendy One,Ysabeau SC,Noto Sans Ethiopic,Doto,Alan Sans,Wire One,Mochiy Pop P One,Asta Sans,Homenaje,Comme,Noto Sans Math,Sour Gummy,Gayathri,Denk One,Mina,Anek Malayalam,Elms Sans,Mozilla Headline,Mohave,NTR,Truculenta,Kulim Park,Duru Sans,Chau Philomene One,Nokora,Moderustic,Anek Tamil,Mooli,Gafata,Orienta,Jaro,Stick,Ysabeau,Faculty Glyphic,IBM Plex Sans Thai Looped,Gemunu Libre,Khmer,Carme,Varta,TASA Orbiter,Timmana,Momo Trust Sans,Trispace,Agdasima,Mozilla Text,Anek Gujarati,Rationale,Stack Sans Headline,Strait,Story Script,Cantora One,Pavanam,Geom,Hubot Sans,Dorsa,Carrois Gothic SC,Stack Sans Text,New Amsterdam,Tauri,Noto Sans Mende Kikakui,Tac One,Liter,Huninn,IBM Plex Sans Devanagari,Chocolate Classical Sans,Stylish,Noto Sans Buhid,Qahiri,Libertinus Sans,Shippori Antique B1,Noto Music,Notable,Englebert,Tiny5,Sono,Braah One,Rum Raisin,Anek Kannada,Cagliostro,Preahvihear,Hedvig Letters Sans,Noto Sans Canadian Aboriginal,Noto Sans Tagalog,Noto Sans Samaritan,Text Me One,Montserrat Underline,Lexend Mega,Yaldevi,Seymour One,SN Pro,Asap Sharp,WDXL Lubrifont JP N,Noto Sans Thaana,Scoutie Sans,Atkinson Hyperlegible Mono,National Park,Winky Sans,Encode Sans SC,Siemreap,Beiruti,Momo Trust Display,Anek Odia,Valley Sans,Akt,BBH Bartle,Vend Sans,Alumni Sans Pinstripe,Noto Sans Linear A,Noto Sans Coptic,Ysabeau Infant,Kite One,Reem Kufi Fun,Ruluko,Arsenal SC,Noto Sans Gothic,Nuosu SIL,Noto Sans Osmanya,Chiron Hei HK,Galdeano,Noto Sans Javanese,Meera Inimai,Dhurjati,Cascadia Code,Noto Sans Tai Viet,Noto Sans Glagolitic,Noto Sans Nag Mundari,Bpmf Huninn,Bubbler One,Anek Gurmukhi,Lexend Tera,Orbit,Hubballi,Alumni Sans SC,Noto Sans Sora Sompeng,Noto Sans Tamil Supplement,Noto Sans Adlam,Noto Sans Lao Looped,Momo Signature,Reem Kufi Ink,Gidugu,SUSE Mono,GFS Neohellenic,Pliant,Noto Sans Anatolian Hieroglyphs,Stack Sans Notch,Lunasima,WDXL Lubrifont SC,Epunda Sans,Ancizar Sans,Gidole,Chathura,Alumni Sans Collegiate One,TASA Explorer,Cossette Texte,Noto Sans Deseret,Noto Sans Tangsa,Noto Sans Batak,Snippet,Tsukimi Rounded,Noto Sans Caucasian Albanian,Noto Sans Cypro Minoan,Matemasie,Noto Sans Cherokee,Kedebideri,Moulpali,Cossette Titre,Cascadia Mono,Noto Sans Pahawh Hmong,Noto Sans NKo,Ojuju,Narnoor,Amarna,Finlandica Text,Noto Traditional Nushu,Noto Sans Vai,Noto Sans Syloti Nagri,Noto Sans Vithkuqi,Noto Sans Shavian,Asimovian,Noto Sans Kaithi,Noto Sans Mongolian,Menbere,Estedad,LXGW Marker Gothic,Noto Sans Carian,WDXL Lubrifont TC,Noto Sans Siddham,BBH Bogle,Noto Sans Old Italic,Noto Sans Multani,BBH Hegarty,M PLUS Code Latin,Noto Sans Syriac,Noto Sans Yi,Noto Sans Hanunoo,Noto Sans Marchen,Phetsarath,Geomini,Noto Sans Sunuwar,Savate,Noto Sans Balinese,Noto Sans Runic,Noto Sans Takri,Noto Sans Old Permic,Noto Sans Egyptian Hieroglyphs,Noto Sans Nandinagari,Noto Sans Duployan,Karla Tamil Upright,Noto Sans Bamum,Noto Sans Old Persian,Winky Rough,Noto Sans Tifinagh,Tirra,Noto Sans Old Hungarian,Noto Sans Grantha,Noto Sans Lisu,Mingzat,Hind Mysuru,Noto Sans Osage,Karla Tamil Inclined,Noto Sans Syriac Eastern,Sirivennela,Bytesized,Noto Sans Mandaic,Noto Sans Avestan,Noto Sans Old Turkic,Matangi,Noto Sans Tai Le,Miranda Sans,Noto Sans Mahajani,Noto Sans Medefaidrin,Noto Sans Adlam Unjoined,Noto Sans Newa,Noto Sans Indic Siyaq Numbers,Noto Sans Miao,Noto Sans Lydian,Noto Sans Elbasan,Noto Sans Nabataean,Noto Sans Old North Arabian,Noto Sans Pau Cin Hau,Noto Sans Meroitic,Sankofa Display,Noto Sans Khojki,Bpmf Zihi Kai Std,Noto Sans Cuneiform,Tuffy,Noto Sans Sundanese,Noto Sans Imperial Aramaic,Noto Sans Inscriptional Parthian,Noto Sans Cham,Noto Znamenny Musical Notation,Noto Sans Wancho,Noto Sans Inscriptional Pahlavi,Noto Sans Palmyrene,Noto Sans NKo Unjoined,Noto Sans Hanifi Rohingya,Noto Sans Zanabazar Square,Noto Sans Brahmi,Finlandica Headline,Noto Sans Old South Arabian,Noto Sans Buginese,Noto Sans Chakma,Noto Sans Rejang,Noto Sans Sharada,Noto Sans Mayan Numerals,Noto Sans Limbu,Noto Sans Kawi,Noto Sans Elymaic,Noto Sans Sogdian,Noto Sans Linear B,Noto Sans New Tai Lue,Noto Sans Bassa Vah,Strichpunkt Sans,Noto Sans Tai Tham,Noto Sans Tagbanwa,Noto Sans Cypriot,Noto Sans Hatran,Noto Sans Phoenician,Noto Sans Tirhuta,Noto Sans Saurashtra,Noto Sans Ugaritic,Noto Sans SignWriting,Kanchenjunga,Noto Sans Masaram Gondi,Noto Sans Khudawadi,Noto Sans Syriac Western,Noto Sans Mro,Noto Sans Ogham,Noto Sans Psalter Pahlavi,Noto Sans Chorasmian,Noto Sans PhagsPa,Noto Sans Nushu,Noto Sans Gunjala Gondi,Noto Sans Old Sogdian,Noto Sans Soyombo,Noto Sans Kayah Li,Noto Sans Lepcha,Noto Sans Manichaean,Noto Sans Kharoshthi,Noto Sans Modi,Noto Sans Lycian",
+    "serif": "Playfair Display,Roboto Slab,Merriweather,Lora,Noto Serif,Cormorant Garamond,PT Serif,Libre Baskerville,Noto Serif JP,Instrument Serif,EB Garamond,Fraunces,Bitter,DM Serif Display,Crimson Text,Cinzel,Source Serif 4,Slabo 27px,Arvo,Newsreader,Bodoni Moda,Domine,Zilla Slab,Crimson Pro,Marcellus,Spectral,IBM Plex Serif,Cormorant,Frank Ruhl Libre,Noto Serif TC,Noto Serif SC,Nanum Myeongjo,Vollkorn,Noto Serif KR,Amiri,Roboto Serif,Libre Caslon Text,Literata,Cardo,Antic Slab,DM Serif Text,Prata,Aleo,Shippori Mincho,Bree Serif,Playfair,Baskervville,Tinos,Alegreya,Sawarabi Mincho,Noto Naskh Arabic,Noto Nastaliq Urdu,Sanchez,Old Standard TT,Crete Round,Noticia Text,Martel,Zen Old Mincho,Josefin Slab,STIX Two Text,Gilda Display,Neuton,Quattrocento,Faustina,Rokkitt,Unna,Andada Pro,Playfair Display SC,Abhaya Libre,Libre Bodoni,Suez One,GFS Didot,Lustria,Gelasio,Petrona,Lusitana,Cormorant Infant,Sorts Mill Goudy,Vidaloka,Volkhov,Besley,Noto Serif Display,Noto Serif Bengali,Arapey,Eczar,Alice,Shippori Mincho B1,Ultra,Bevan,Kaisei Decol,Taviraj,Pridi,Adamina,Mate,IM Fell English,Ovo,Charis SIL,Rufina,Kreon,Yrsa,Yuji Mai,Marcellus SC,Inria Serif,Bentham,Kiwi Maru,Radley,Libre Caslon Display,Gloock,Gowun Batang,Rozha One,Caudex,Noto Serif Khojki,Bona Nova SC,Laila,Castoro,Kameron,Tiro Bangla,Podkova,Glegoo,Cormorant Upright,Ibarra Real Nova,Judson,Lateef,Trirong,Gabriela,Bellefair,Cantata One,PT Serif Caption,Karma,Oranienbaum,Antic Didone,IM Fell English SC,Noto Serif Devanagari,BIZ UDPMincho,Noto Serif Georgian,Graduate,Tiro Devanagari Hindi,Brygada 1918,Montagu Slab,Cormorant SC,Arbutus Slab,Hina Mincho,Coustard,Alegreya SC,Halant,Hepta Slab,Enriqueta,Markazi Text,Fjord One,Goudy Bookletter 1911,Caladea,Hahmlet,Trocchi,Fanwood Text,Zen Antique,BioRhyme,STIX Two Math,Abyssinica SIL,Young Serif,Copse,Almendra,Cormorant Unicase,Hanuman,Average,Aref Ruqaa,Maitree,IM Fell DW Pica,Kadwa,Spectral SC,Noto Serif Thai,Hedvig Letters Serif,Kaisei Opti,Yuji Syuku,Fauna One,Kurale,Vesper Libre,David Libre,Scheherazade New,Platypi,Inknut Antiqua,Asul,Asar,Vollkorn SC,Kalnia,Alike,Rasa,Quando,Rosarivo,Libertinus Serif,Poly,Brawler,Piazzolla,Cutive,Slabo 13px,Vast Shadow,Della Respira,Prociono,Suranna,Buenard,BhuTuka Expanded One,Mirza,IM Fell Double Pica,Balthazar,Artifika,Tienne,IM Fell French Canon,Bona Nova,Song Myung,IM Fell Great Primer,Cambo,Zen Antique Soft,Solway,Alike Angular,Holtwood One SC,Aoboshi One,Esteban,Noto Serif Tamil,Noto Serif Kannada,Ledger,Grenze,IM Fell DW Pica SC,Kaisei Tokumin,Imbue,Amethysta,Maiden Orange,Montaga,Noto Serif Malayalam,IM Fell Double Pica SC,Gentium Book Plus,Jacques Francois,Sumana,Scope One,Tiro Devanagari Sanskrit,Noto Serif HK,Poltawski Nowy,Gupter,Headland One,IM Fell Great Primer SC,Zilla Slab Highlight,BIZ UDMincho,Manuale,Belgrano,IM Fell French Canon SC,Peralta,Habibi,Bodoni Moda SC,Fenix,Amiri Quran,Baskervville SC,Kotta One,Suwannaphum,Stint Ultra Condensed,Sree Krushnadevaraya,Mate SC,Alkalami,Arbutus,Cactus Classical Serif,Jomolhari,Port Lligat Slab,Sura,Tiro Tamil,Gentium Plus,Noto Serif Gujarati,Inika,Wittgenstein,New Tegomin,Junge,Noto Serif Telugu,Stoke,Kaisei HarunoUmi,Donegal One,Gulzar,Joan,Yuji Boku,Tiro Gurmukhi,Dai Banna SIL,Ancizar Serif,Stint Ultra Expanded,Odor Mean Chey,Linden Hill,Tiro Devanagari Marathi,Texturina,Ramaraja,Noto Serif Ahom,Koh Santepheap,Noto Serif Hebrew,Noto Serif Tibetan,Marko One,Noto Serif Lao,Peddana,Uchen,Sedan,Noto Serif Ethiopic,Benne,Almendra SC,Wellfleet,Noto Serif Armenian,Noto Serif Sinhala,Sahitya,Trykker,Noto Serif Khmer,Diphylleia,Bacasime Antique,Aref Ruqaa Ink,Tiro Kannada,Sedan SC,Noto Rashi Hebrew,Rhodium Libre,Alyamama,Noto Serif Dives Akuru,Tiro Telugu,BioRhyme Expanded,Labrada,UoqMunThenKhung,Ruwudu,Noto Serif Myanmar,Noto Serif Tangut,Parastoo,Noto Serif Vithkuqi,Chiron Sung HK,Tai Heritage Pro,Annapurna SIL,Suravaram,Noto Serif Balinese,Danfo,Noto Serif Dogra,Noto Serif Yezidi,Noto Serif Toto,Grandiflora One,Noto Serif Gurmukhi,Epunda Slab,Lisu Bosa,Noto Serif Oriya,Noto Serif Todhri,Namdhinggo,Noto Serif Khitan Small Script,Noto Serif Makasar,Noto Serif Ottoman Siyaq,Montenegrin Gothic One,Noto Serif NP Hmong,Kay Pho Du,Maname,Padyakke Expanded One,Noto Serif Grantha,BJCree,Noto Serif Hentaigana,Noto Serif Old Uyghur,Idiqlat,Ramsina",
+    "display": "Black Ops One,Lobster Two,Changa One,Alfa Slab One,Lilita One,Bungee,Gravitas One,Lobster,Comfortaa,Abril Fatface,Righteous,Baloo 2,Press Start 2P,Luckiest Guy,Libre Barcode 39,Rowdies,Special Elite,Bangers,Patua One,Oleo Script,Oxanium,Chelsea Market,Angkor,Titan One,Passion One,Creepster,Audiowide,Fugaz One,Dela Gothic One,Forum,Cinzel Decorative,Unica One,Concert One,Yeseva One,Chango,Monoton,Playball,Eater,Gabarito,Rammetto One,Poiret One,Staatliches,Goldman,Comic Relief,Calistoga,Caprasimo,Racing Sans One,Shrikhand,Squada One,Carter One,Londrina Solid,Averia Serif Libre,Chewy,Bowlby One SC,Vina Sans,Pirata One,Lemonada,Potta One,Coda,Skranji,Aboreto,Grandstander,Tilt Warp,Germania One,MuseoModerno,Limelight,UnifrakturMaguntia,Jersey 25,Rye,Boogaloo,Funnel Display,Stardos Stencil,Big Shoulders,Baloo Da 2,Balsamiq Sans,Libre Barcode 128,Nixie One,Yatra One,Grenze Gotisch,Fredericka the Great,Cabin Sketch,Bowlby One,Pixelify Sans,Barriecito,Elsie,Averia Libre,Corben,Protest Revolution,Tektur,Seaweed Script,Nova Square,ADLaM Display,MedievalSharp,Rampart One,Wallpoet,Irish Grover,Knewave,Silkscreen,Chonburi,Koulen,Flow Circular,Rakkas,Honk,DynaPuff,Poller One,Faster One,Croissant One,Overlock,Sniglet,Bubblegum Sans,Sigmar One,Sansita Swashed,Baloo Thambi 2,Turret Road,Oleo Script Swash Caps,Anybody,Poetsen One,Love Ya Like A Sister,Mountains of Christmas,Kelly Slab,Ruslan Display,Bellota Text,Agbalumo,Bungee Inline,Baloo Bhaijaan 2,Rubik Doodle Shadow,Frijole,Happy Monkey,Metamorphous,Jomhuria,Battambang,Red Rose,Slackey,Bungee Spice,Libre Barcode 39 Text,Zen Dots,Fasthand,Modern Antiqua,Tilt Neon,Boldonse,Baloo Bhai 2,Shantell Sans,Lacquer,Original Surfer,Bungee Shade,Contrail One,Baloo Tamma 2,Supermercado One,Averia Sans Libre,Metal Mania,Vampiro One,Sarina,Nosifer,Prosto One,Macondo,Fontdiner Swanky,Freehand,Amarante,Rubik Dirt,Baloo Chettan 2,Megrim,Coiny,Arima,Freeman,Road Rage,Trade Winds,Allan,Kranky,Codystar,Bagel Fat One,Finger Paint,Modak,Bigshot One,Jersey 10,Expletus Sans,Uncial Antiqua,Poor Story,Baumans,Iceberg,Cherry Bomb One,Lily Script One,Oregano,Bakbak One,Pompiere,Cherry Cream Soda,Atma,Aladin,Unkempt,Libertinus Math,New Rocker,Protest Strike,Bokor,Odibee Sans,Darumadrop One,McLaren,Dynalight,Sail,Rubik Spray Paint,Life Savers,Moul,Rubik Glitch,Baloo Paaji 2,Bellota,Orelega One,Salsa,Gluten,UnifrakturCook,Goblin One,Sevillana,Medula One,Sekuya,Crushed,Freckle Face,Climate Crisis,Galindo,Reggae One,Nova Flat,Shojumaru,Nova Round,Karantina,Viaoda Libre,Smythe,Galada,Train One,Dokdo,Sancreek,Henny Penny,Libre Barcode 39 Extended Text,Kablammo,Lemon,Nova Cut,Ceviche One,Alkatra,Rubik Bubbles,Asset,Spicy Rice,Bruno Ace,Cherry Swash,Nova Oval,Akronim,Londrina Outline,Baloo Bhaina 2,Iceland,Protest Riot,Ribeye,Raleway Dots,Jolly Lodger,Caesar Dressing,Atomic Age,Baloo Tammudu 2,Kavoon,Bitcount Single,Kenia,Miltonian,Gugi,Ranchers,Overlock SC,Chicle,Nova Slim,Macondo Swash Caps,Katibeh,Miniver,Phudu,Badeen Display,Miltonian Tattoo,Akaya Kanadaka,Emilys Candy,Marhey,Gorditas,Astloch,Libre Barcode 128 Text,Spirax,Nova Script,Girassol,Yeon Sung,Sigmar,Fascinate,Redacted,Rubik Scribble,Dangrek,Smokum,Srisakdi,Tourney,Glass Antiqua,Metal,Underdog,Margarine,Emblema One,Mystery Quest,Averia Gruesa Libre,Zen Tokyo Zoo,Nabla,Jacquard 12,Manufacturing Consent,Akaya Telivigala,Cute Font,Erica One,Single Day,Joti One,Risque,Unlock,Almendra Display,Barrio,Elsie Swash Caps,Simonetta,Content,Geostar Fill,Paprika,Bitcount Grid Double,Rubik Moonrocks,Handjet,Flamenco,Jersey 20,Bitcount Prop Single,Milonga,Caacupe One,Tulpen One,Autour One,Chela One,Sonsie One,Tilt Prism,Mogra,Monomakh,Rubik Wet Paint,Tillana,Purple Purse,Castoro Titling,Piedra,Vibes,Offside,Bruno Ace SC,Luxurious Roman,Keania One,Griffy,Ravi Prakash,Libre Barcode EAN13 Text,Ewert,Big Shoulders Stencil,Jacques Francois Shadow,Bigelow Rules,Sirin Stencil,Fruktur,Diplomata,Plaster,Federant,Farsan,Fascinate Inline,Sofadi One,Bungee Hairline,Alumni Sans Inline One,Oldenburg,Hanalei Fill,Londrina Shadow,Buda,Bungee Outline,Konkhmer Sleokchher,Butcherman,Oi,Stalinist One,Libre Barcode 39 Extended,Kirang Haerang,Ribeye Marrow,Ranga,Passero One,Bahiana,Gideon Roman,Rubik Iso,Londrina Sketch,Jacquarda Bastarda 9,Jersey 15,Lancelot,Kumar One,Revalia,Rubik Pixels,Rubik Distressed,Foldit,Aubrey,Ponomar,Shizuru,Diplomata SC,Flavors,Micro 5,Blaka,Big Shoulders Inline,Kumar One Outline,Triodion,Trochut,Jacquard 24,Hanalei,Rubik Vinyl,Rubik Burned,Rubik Glitch Pop,Chenla,Bitcount Grid Single,Gajraj One,Bungee Tint,Black And White Picture,Zen Loop,Rubik Puddles,Rubik Gemstones,Langar,Geist Pixel,Rubik 80s Fade,Kalnia Glaze,Bahianita,Flow Rounded,Rubik Beastly,Flow Block,Rubik Doodle Triangles,Protest Guerrilla,Combo,Blaka Hollow,Rubik Microbe,Rubik Broken Fax,Redacted Script,Taprom,Linefont,Agu Display,Syne Tactile,Tagesschrift,Snowburst One,Coral Pixels,Rubik Marker Hatch,Ga Maamli,Moo Lah Lah,Geostar,Rock 3D,Moirai One,Exile,Palette Mosaic,Rubik Maze,Libertinus Serif Display,Chokokutai,Jaini Purva,Rubik Maps,Ponnala,Shafarik,Jaini,Alien Block,Bitcount,Allkin,Rubik Lines,Warnes,Saira Stencil,Rubik Storm,Bitcount Prop Double Ink,Bitcount Single Ink,Wavefont,Blaka Ink,Libertinus Keyboard,Jacquard 12 Charted,Jersey 10 Charted,Bitcount Prop Double,Bitcount Grid Single Ink,Jacquard 24 Charted,Jersey 15 Charted,Bitcount Prop Single Ink,Micro 5 Charted,Bitcount Grid Double Ink,Pochaevsk,Bitcount Ink,Yarndings 20 Charted,Jersey 25 Charted,Yarndings 20,Jersey 20 Charted,Jacquarda Bastarda 9 Charted,Yarndings 12,Yarndings 12 Charted",
+    "handwriting": "Dancing Script,Caveat,Pacifico,Shadows Into Light,Great Vibes,Indie Flower,Permanent Marker,Satisfy,Kalam,Yellowtail,Amatic SC,Zeyada,Kaushan Script,Courgette,Allura,Patrick Hand,Comic Neue,Nanum Gothic Coding,Sacramento,Rock Salt,Italianno,Delius,Gloria Hallelujah,Tangerine,Damion,Berkshire Swash,Alex Brush,Cookie,Pinyon Script,Architects Daughter,Homemade Apple,Caveat Brush,Nothing You Could Do,Parisienne,Nanum Pen Script,Merienda,Reenie Beanie,Sriracha,Bad Script,Amita,Handlee,Sofia,Marck Script,Mrs Saint Delafield,Gochi Hand,Leckerli One,Pangolin,Hachi Maru Pop,Mr Dafoe,Charm,Ms Madi,Ma Shan Zheng,Covered By Your Grace,Cedarville Cursive,Itim,Just Another Hand,Oooh Baby,La Belle Aurore,Neucha,Nanum Brush Script,Shadows Into Light Two,Niconne,Herr Von Muellerhoff,Style Script,Petit Formal Script,Playpen Sans,Mali,Fondamento,Sedgwick Ave Display,Yesteryear,Grand Hotel,Klee One,Ephesis,Annie Use Your Telescope,Allison,Schoolbell,Quintessential,Calligraffitti,Dawning of a New Day,Rancho,Coming Soon,Norican,Arizonia,Crafty Girls,Kristi,Rouge Script,Corinthia,Monsieur La Doulaise,Qwitcher Grypen,Meddon,Waiting for the Sunrise,Over the Rainbow,Aguafina Script,Meow Script,Beth Ellen,Birthstone,Hurricane,Mansalva,Square Peg,Gaegu,Nerko One,Rochester,Moon Dance,Delius Unicase,Give You Glory,Vibur,Sue Ellen Francisco,Whisper,Walter Turncoat,Vujahday Script,Qwigley,Euphoria Script,Fuggles,MonteCarlo,Patrick Hand SC,Redressed,Montez,Gamja Flower,Carattere,Fuzzy Bubbles,Bilbo Swash Caps,Birthstone Bounce,Mr De Haviland,WindSong,League Script,Sunshiney,Delicious Handrawn,Julee,Meie Script,Smooch,The Girl Next Door,Long Cang,Zhi Mang Xing,Just Me Again Down Here,Bonheur Royale,Charmonman,Delius Swash Caps,Loved by the King,Borel,Sedgwick Ave,Swanky and Moo Moo,Licorice,Clicker Script,Eagle Lake,Edu TAS Beginner,The Nautigal,Hi Melody,Short Stack,Yomogi,Liu Jian Mao Cao,Waterfall,Lavishly Yours,Ruthie,Beau Rivage,East Sea Dokdo,Imperial Script,Edu SA Beginner,Mynerve,Mea Culpa,Luxurious Script,Engagement,LXGW WenKai TC,Lovers Quarrel,Edu NSW ACT Cursive,Comforter,Passions Conflict,Grape Nuts,Kavivanar,Solitreo,Devonshire,Playwrite US Trad,Gwendolyn,Ballet,Playwrite NO,My Soul,Festive,Stalemate,Island Moments,Playwrite IN,Bilbo,Jim Nightshade,Romanesco,Caramel,Lugrasimo,Edu AU VIC WA NT Guides,Playwrite DE Grund,Dekko,Playpen Sans Arabic,Butterfly Kids,Kapakana,Water Brush,Playwrite CU,Betania Patmos,Playwrite IS,Shalimar,Playwrite AU SA,Condiment,Comforter Brush,Playwrite GB S,Playwrite AU NSW,Edu AU VIC WA NT Hand,Fleur De Leah,Iansui,Slackside One,Neonderthaw,Chilanka,Praise,Bonbon,Updock,Playwrite VN Guides,Babylonica,Playwrite HR,Edu NSW ACT Foundation,Love Light,Grey Qo,Inspiration,Dr Sugiyama,Playwrite VN,Edu VIC WA NT Beginner,Felipa,Miss Fajardose,Lakki Reddy,Playwrite IE,Mr Bedfort,Send Flowers,Playwrite US Modern,Princess Sofia,Grechen Fuemen,Cause,Kolker Brush,Playwrite BR Guides,Lumanosimo,Mrs Sheppards,Twinkle Star,Are You Serious,Cherish,Playwrite HU,Molle,Playwrite MX Guides,Kings,Playpen Sans Hebrew,Playwrite DK Loopet,Playwrite AU QLD,Splash,Ole,Edu AU VIC WA NT Dots,Estonia,Sassy Frass,Gveret Levin,Playwrite DE LA Guides,Explora,Petemoss,Playwrite ZA,Playwrite CA,Playwrite AT,Playwrite PL,Playwrite RO,Tapestry,Playwrite DK Uloopet,Playwrite DE SAS,Edu SA Hand,Playpen Sans Deva,Ruge Boogie,Playwrite DE SAS Guides,Playwrite NZ Basic,Playwrite ES,Ingrid Darling,Playwrite FR Moderne,Playwrite NL,Playwrite BE VLG,Playwrite PT,Playwrite IT Moderna,Puppies Play,Playwrite GB J,Playwrite AR,Playwrite MX,Playpen Sans Thai,Edu QLD Beginner,Playwrite HR Lijeva,Playwrite AU TAS,Yuyu,Edu AU VIC WA NT Pre,Playwrite AU VIC,Edu NSW ACT Hand Pre,Playwrite NG Modern,Playwrite NZ,Playwrite CZ,Playwrite TZ,Yuyu Short,Yuji Hentaigana Akari,Playwrite SK,Playwrite BE WAL,Edu AU VIC WA NT Arrows,Playwrite DE LA,Playwrite CO Guides,Edu VIC WA NT Hand,Playwrite CO,Playwrite CU Guides,Edu VIC WA NT Hand Pre,Playwrite US Trad Guides,Bpmf Iansui,Edu QLD Hand,Playwrite PE,Playwrite CL,Playwrite ES Deco,Playwrite BR,Playwrite ID,Yuji Hentaigana Akebono,Playwrite AU VIC Guides,Playwrite GB J Guides,Betania Patmos In,Betania Patmos In GDL,Playwrite NZ Guides,Playwrite TZ Guides,Playwrite PL Guides,Playwrite AR Guides,Playwrite PT Guides,Playwrite PE Guides,Playwrite FR Trad,Playwrite DE Grund Guides,Betania Patmos GDL,Playwrite GB S Guides,Playwrite DE VA,Playwrite BE WAL Guides,Playwrite IT Trad,Playwrite NZ Basic Guides,Playwrite IE Guides,Playwrite IN Guides,Playwrite DK Uloopet Guides,Playwrite ES Guides,Playwrite IT Moderna Guides,Playwrite DE VA Guides,Playwrite FR Moderne Guides,Playwrite HU Guides,Playwrite ES Deco Guides,Playwrite FR Trad Guides,Playwrite IT Trad Guides,Playwrite AU SA Guides,Playwrite US Modern Guides,Playwrite AU TAS Guides,Playwrite ID Guides,Playwrite HR Lijeva Guides,Playwrite NG Modern Guides,Playwrite AU QLD Guides,Playwrite RO Guides,Playwrite CL Guides,Playwrite ZA Guides,Playwrite AU NSW Guides,Playwrite AT Guides,Playwrite DK Loopet Guides,Playwrite NL Guides,Playwrite CA Guides,Playwrite BE VLG Guides,Playwrite NO Guides,Playwrite IS Guides,Playwrite SK Guides,Playwrite CZ Guides,Playwrite HR Guides",
+    "monospace": "Roboto Mono,JetBrains Mono,Source Code Pro,Inconsolata,IBM Plex Mono,Space Mono,DM Mono,Geist Mono,Courier Prime,PT Mono,Share Tech Mono,VT323,Fira Code,Google Sans Code,Cutive Mono,Ubuntu Mono,Anonymous Pro,Cousine,Fira Mono,Red Hat Mono,Overpass Mono,Fragment Mono,Azeret Mono,Spline Sans Mono,Chivo Mono,Major Mono Display,Sometype Mono,Oxygen Mono,Syne Mono,B612 Mono,Xanh Mono,Lekton,Nova Mono,Martian Mono,M PLUS 1 Code,Monofett,Reddit Mono,Victor Mono,Kode Mono,Sixtyfour,Intel One Mono,LXGW WenKai Mono TC,Ubuntu Sans Mono,Sixtyfour Convergence,Iosevka Charon,Libertinus Mono,Workbench,Iosevka Charon Mono,Lilex,Hibur Mono,Datatype"
+  };
+  var FONTS = FONT_CATEGORIES.flatMap(
+    (category) => CATALOGUE[category].split(",").map((family) => ({ family, category }))
+  );
+  var BY_FAMILY = new Map(FONTS.map((f2) => [f2.family, f2]));
+  var SPOTIFY_STACK = "SpotifyMixUI, CircularSp, CircularSp-Arab, CircularSp-Cyrl, CircularSp-Deva, CircularSp-Grek, CircularSp-Hebr, sans-serif";
+  var SPOTIFY_TITLE_STACK = `SpotifyMixUITitle, ${SPOTIFY_STACK}`;
+  var HEADING_BASE = [
+    ".encore-text-headline-large",
+    ".encore-text-headline-medium",
+    ".encore-text-title-large",
+    ".encore-text-title-medium",
+    ".encore-text-title-small",
+    ".encore-text-title-extra-small",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6"
+  ];
+  var HEADING_SELECTORS = HEADING_BASE.flatMap((s2) => [`body ${s2}`, `body ${s2} *`]).join(",\n");
+  function getFont(which) {
+    return readLS(which === "body" ? FONT_BODY_KEY : FONT_HEADING_KEY, FONT_DEFAULT);
+  }
+  var CHUNK_SIZE = 25;
+  function loadFamilies(id, families) {
+    const wanted = families.filter((f2) => f2 && f2 !== FONT_DEFAULT && BY_FAMILY.has(f2));
+    const existing = Array.from(document.querySelectorAll(`link[data-liquify-fonts="${id}"]`));
+    const hrefs = [];
+    for (let i2 = 0; i2 < wanted.length; i2 += CHUNK_SIZE) {
+      const query = wanted.slice(i2, i2 + CHUNK_SIZE).map((f2) => `family=${encodeURIComponent(f2).replace(/%20/g, "+")}:wght@400;500;700`).join("&");
+      hrefs.push(`https://fonts.googleapis.com/css2?${query}&display=swap`);
+    }
+    const current = existing.map((l) => l.href);
+    if (current.length === hrefs.length && hrefs.every((h2, i2) => current[i2] === h2)) return;
+    for (const link of existing) link.remove();
+    for (const href of hrefs) {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = href;
+      link.dataset.liquifyFonts = id;
+      document.head.appendChild(link);
+    }
+  }
+  var previewed = /* @__PURE__ */ new Set();
+  function loadFontPreviews(families) {
+    const fresh = families.filter((f2) => f2 && f2 !== FONT_DEFAULT && BY_FAMILY.has(f2) && !previewed.has(f2));
+    if (fresh.length === 0) return;
+    for (const f2 of fresh) previewed.add(f2);
+    for (let i2 = 0; i2 < fresh.length; i2 += CHUNK_SIZE) {
+      const query = fresh.slice(i2, i2 + CHUNK_SIZE).map((f2) => `family=${encodeURIComponent(f2).replace(/%20/g, "+")}:wght@400;500;700`).join("&");
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = `https://fonts.googleapis.com/css2?${query}&display=swap`;
+      link.dataset.liquifyFonts = PREVIEW_LINK_ID;
+      document.head.appendChild(link);
+    }
+  }
+  function applyFonts() {
+    const body = getFont("body");
+    const heading = getFont("heading");
+    loadFamilies(FAMILY_LINK_ID, [body, heading]);
+    const rules = [];
+    if (body !== FONT_DEFAULT) {
+      rules.push(`body, body *:not(svg):not(svg *) {
+  font-family: "${body}", ${SPOTIFY_STACK} !important;
+}`);
+    }
+    if (heading !== FONT_DEFAULT || body !== FONT_DEFAULT) {
+      const stack = heading === FONT_DEFAULT ? SPOTIFY_TITLE_STACK : `"${heading}", ${SPOTIFY_TITLE_STACK}`;
+      rules.push(`${HEADING_SELECTORS} {
+  font-family: ${stack} !important;
+}`);
+    }
+    updateStyle(STYLE_ID8, rules.join("\n\n"));
+  }
+  function setFont(which, family) {
+    localStorage.setItem(which === "body" ? FONT_BODY_KEY : FONT_HEADING_KEY, family);
+    applyFonts();
+  }
+  function resetFonts() {
+    localStorage.setItem(FONT_BODY_KEY, FONT_DEFAULT);
+    localStorage.setItem(FONT_HEADING_KEY, FONT_DEFAULT);
+    applyFonts();
+  }
+  function ensureFontsApplied() {
+    applyFonts();
+  }
+
+  // src/settings/features/localFilesCard.ts
+  var STYLE_ID9 = "liquify-local-files-style";
+  var LOCAL_FILES_TRANSPARENT_KEY = "liquify-local-files-transparent";
+  var LOCAL_FILES_CARD = ".Yfd3sCOSw_wfDQdq5eSy";
+  function applyCss4() {
+    const on = readLS(LOCAL_FILES_TRANSPARENT_KEY, "off") === "on";
+    updateStyle(
+      STYLE_ID9,
+      on ? `${LOCAL_FILES_CARD} {
+  background-color: transparent !important;
+  /* The fill was the only thing giving the entry an edge; the theme's rim takes
+     over that job once it's gone. */
+  box-shadow: var(--liquify-shadow);
+}` : ""
+    );
+  }
+  function setLocalFilesTransparent(mode) {
+    localStorage.setItem(LOCAL_FILES_TRANSPARENT_KEY, mode === "on" ? "on" : "off");
+    applyCss4();
+  }
+  function ensureLocalFilesTransparentApplied() {
+    applyCss4();
   }
 
   // src/settings/features/homeLayout.ts
-  var STYLE_ID3 = "liquify-home-layout-style";
+  var STYLE_ID10 = "liquify-home-layout-style";
   var HOME_LAYOUT_KEY = "liquify-home-layout";
+  var HOME_SECTIONS = ".mpXpsL8sGx7xHzYAb5X7, .QVX8Getzkg44Frgfu0wF, .YeMXHXUM5LesBemNwrlw";
   function updateHomeLayoutCss(on) {
-    const css = on ? ".main-home-content section { padding: 1rem; gap: .5rem; box-shadow: var(--liquify-shadow); border-radius: 20px; }.main-card-cardContainer, .LXxEtdyreLg2dh0C { height: calc(100% - 1px); }.XtiGtrj_ysgd8Bmv { --margin-start: 0px; --margin-end: 0px; }" : ".main-home-content section { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; box-shadow: none !important; }";
-    updateStyle(STYLE_ID3, css);
+    const css = on ? `${HOME_SECTIONS} { padding: 16px; box-shadow: var(--liquify-shadow); border-radius: 20px; }.YeMXHXUM5LesBemNwrlw .X433eA5ps5SoaH2ccjn0 { --margin-start: 0px; --margin-end: 0px; }.QVX8Getzkg44Frgfu0wF .L5oPevXEAY1GuRJ9a1_j { margin-inline: 0; box-sizing: border-box; }` : `${HOME_SECTIONS} { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; box-shadow: none !important; }`;
+    updateStyle(STYLE_ID10, css);
   }
   function applyHomeLayout(mode) {
     const m2 = mode === "on" ? "on" : "off";
@@ -4673,18 +6443,23 @@
   }
 
   // src/settings/features/compactPlayer.ts
-  var STYLE_ID4 = "liquify-compact-player-style";
+  var STYLE_ID11 = "liquify-compact-player-style";
   function updateCss(enabled) {
     const css = enabled ? [
-      ".Root__now-playing-bar { height: 65px !important; border-radius: 20px !important; }",
+      `${PLAYER_BAR} { height: 65px !important; border-radius: 20px !important; }`,
       ".main-nowPlayingBar-nowPlayingBar { height: 50px !important; }",
       ".main-nowPlayingBar-center { width: 60% !important; }",
-      ".player-controls { display: flex !important; flex-direction: row !important; align-items: center !important; gap: 0px !important; margin-left: 15px !important; }",
+      '[data-testid="player-controls"] { display: flex !important; flex-direction: row !important; align-items: center !important; gap: 0px !important; margin-left: 15px !important; }',
       ".player-controls__buttons { width: fit-content !important; margin-bottom: 0px !important; }",
-      ".player-controls .playback-bar { flex: 1 1 auto; min-width: 0; }",
-      ".BNf2Xbd3qYwZdYVY { display: none !important; }"
+      '[data-testid="player-controls"] .playback-bar { flex: 1 1 auto; min-width: 0; }',
+      // the third text line under title and artists ("Lossless" etc.) doesn't fit the compact bar
+      '[data-testid="now-playing-widget"] .uCxEsNf7zhuEo_XhzBel { display: none !important; }',
+      // A smaller cover to fit the 50px row. Not !important, so Comfy Cover
+      // Art's explicit size still wins when both are on.
+      `.Root__top-container ${PLAYBAR_COVER_SLOT} { width: 42px; height: 42px; }`,
+      `.Root__top-container ${PLAYBAR_COVER_SLOT} :is(div, button, img, video) { width: 100%; height: 100%; }`
     ].join("\n") : "";
-    updateStyle(STYLE_ID4, css);
+    updateStyle(STYLE_ID11, css);
   }
   function applyCompactPlayer(mode) {
     const m2 = mode === "on" ? "on" : "off";
@@ -4726,10 +6501,11 @@
   }
 
   // src/settings/features/playlistHeader.ts
-  var STYLE_ID5 = "liquify-playlist-header-style";
+  var STYLE_ID12 = "liquify-playlist-header-style";
+  var HEADER = ".UbzV6GmaFXRSbQNfaAZL.ajHBc3IuiQpQkTmGSCcr";
   function updatePlaylistHeaderCss(show) {
-    const css = show ? "" : ".main-entityHeader-container { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; box-shadow: none !important; }";
-    updateStyle(STYLE_ID5, css);
+    const css = show ? "" : `${HEADER} { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; box-shadow: none !important; }`;
+    updateStyle(STYLE_ID12, css);
   }
   function applyPlaylistHeader(mode) {
     const m2 = mode === "show" ? "show" : "hide";
@@ -4741,187 +6517,254 @@
     updatePlaylistHeaderCss(saved === "show");
   }
 
-  // src/assets/player-icons/pause.png
-  var pause_default = "data:image/png;base64,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1tofLHFX7Q+aWOv3Yb3Xpfbvw6E6QEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEChBQnQEhxAoQUJ0BIcQKEFCdASHEC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";
-
-  // src/assets/player-icons/play.png
-  var play_default = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAYkAAAGpCAYAAAB4ccqLAAAACXBIWXMAABYlAAAWJQFJUiTwAAAd60lEQVR4nO3d7VXcVrsGYCnr/LdPBSYVhLcCkwpMKrBdgXkrCK4guILgCoIrCFRgqCBQwQkV6KztPHLkMQMz+t7Sda3Fip0PZ9AY3+z9bN0qq6oqGE5ZlgdFURzE/+CwKIrnW/5n6e//veWf3cZHcl1V1bZ/D6BXQqIHZVkeRhDUf61//GzA/+1dBMd1hMulAAH6JiT2FCuDowiB9PFyZi/xPoLjUnAAXQmJJzRCof54MesX/LCbRmhcCg1gV0LiAbF99CZC4afZvcDuroqiuEgfVVXdDv0/A/IlJEIjGI4zXS20lVYZ5wIDeMiqQyK2kt7Ex5qCYZsUGGcRGLakgHWGRFmWabVwMsOh81zcx3bUWVVV12u/GLBmqwmJsiyfRzBYNeznJsLiPKcXDfRj8SERW0qnMWsY8r6FpbuLrahzW1GwHosNiUY4vJ7By1mS+wiLM2EBy7e4kBAOoxEWsAKLCYnGzOHXGbycNUlhcWJmAcu0iJAoy/IkVg9mDtNJM4s3VVVdrvUCwBJlHRJlWR7FlscS74rO1adYWbgxDxYgy5CIraUzc4dZe29eAfnLLiTiRrhzW0tZMK+AzP2Qy8tPq4eyLNNdwH8IiGyk9+n3siwvY2sQyEwWKwmrh8X4mA4YmFdAPmYfEmVZptnDuxm8FPrh/grIyGxDIm6Ku3ByabHuYl5xsfYLAXM2y5lEbC9dC4hFSyWLf8S84nDtFwPmanYhUZblqeH0qqS69s9lWZ7H0WZgRmaz3RR/QKTh9KsZvBymcR+D7TPXH+ZhFiERAXFpe4mg4gNmYvKQiP3oS9tLPOAqwsKRWZjIpDMJAcET0rzirzSnMq+AaUy2khAQ7EnFB0xgkpVEWZbpOdOfBQR7qCs+rlV8wHhGD4kIiN+9x7SUDjf8GUdmD1xEGNao200Cgp6p+ICBjRYSZhAM6C7urzCvgJ6NEhICgpFcxXD72gWHfgweEgKCCXyMsLAFBR0NOrhuVG0ICMaUHmt7Gz1gQAeDriTScUVVG0xMxQd0MNhKIh1RFBDMwIs4MnvpyCzsb5CQiKOur70fzEhd8XGm4gN21/t2UwyqP3sPmDEVH7CjXkMivkO7NagmEzcRFuYVsEXfIXEZy3qedvXEv/HcTGc0nyIsVJLDht5CoizLk6IofnOBv3EVz+q+rf/a5g+i2MJLoZGK7dLw9VCADOK9ig/4Vi8hYQ7x1ae4cfByjLt+ow01fRwLjd6o+ICGvkJirfdDpAHoRfqoqupiyhcS86Dj+PCc8O6uIizMK1i1ziERd7X+urKL+CmCYZbfbUZgpGPIJ3GfAO2p+GDVOoXEyraZ7qNi5CynAWdsSblvpZv7eN/VfLA6XUNiDaeZFvHMgrjb+FRYdHIXq4pJtxZhTK1DYgWnmRb5QBth0Yur6INyZJbFaxUSK7hpbvH70LFVeOa+lk4+xHDbvILFatvddLbQgEh34P5cVdWbpX/hpyO6VVWlecXb2EZhf++ikvzEtWOp9l5JxHbFXwu8Hu/XOpiMleFJfKhUaUclOYvUJiSWNqy+iS/u1T/y0ryiFyo+WJS9QiKOU/65oAvgDPwD4n0+cxd3Jyo+WIR9Q2JJq4i3qhceF88FWer8aQwqycneziGxoFVE+sI9sr20m8a8Ym131fdJxQfZ2icklrCKSPOHY/vF+4t5xbkjs518jLDw+49s7BQSC1lF3MQKwh5xB/F74VwnVGsqPsjKriGR+ypCQPQs7g04Na9oTcUHWXgyJBZwX4SAGEjMK84cme3kKsLCjIxZ2uWO65yXxQJiQOm6prvTi6L4zw6PY+VhaYX+uSzL8whdmJVHVxKZdzSlvd8DATGesiyPY2VhXtHOfQy2z3J88SzTUyuJNxkHhBXEyGJ//TBuJLtf1Sffj/S19ltZlrdxQAAm99RK4jbT7wp/MRCcloqPXqgkZ3JbVxJRJZ1jQHwQENNLf7DFvOJn84rW0rzir/SIYPMKprJ1JZEGaRl+F3hTVdXhDF4HG1R8dKbig0k8FhJ/Z/YFnb6IDi3N50vFRy9uIixUfDCKB7eb4pRKbt/xqTuYuTgym+YUP0alNvtLzbx/xpHZA9ePoW2bSRxnduWvHBvMR8wrjmNe4al47aSt4GvzCob24HZThltNP1pF5EvFR2d3sZI2r6B3360k4nx2Tl+s7wVE3mIVmLZOPqz9WrSUTiH+njrW4lQi9Oah7aactpru48QMmYt5xYmKj05UfNC73EPCo0cXJhXdVVWVVrO/mFe0luYV6a5tdeR09s1MIrPG17uqqpzuWLj4g+7EvKK1u7hr25FZWtlcSeTUF+O7pBWII7MH8VQ39vcijsxeOjJLG7mGxJ2THOvRqCRX8dFeXfFxZl7BPnINCQGxQmnLJOYVb80rWnsX84o3mb5+RvZ1JpHZPOJ/DazXTcVHL1R88KTmSiKX89UfBQQqPnpRV3xcmFewTY4hoQacrzYqPm5cmVZeqSRnm2ZI5DCPuPesCB4S84r0jc5/PRWvtV+jD8q8gq9yW0kICB6l4qOzZsWHR6jyT0jEEjOHm5WEBE9qVHz86Mhsay8bleS2oFasXknksIqw1cReYl5xpJK8ExUfK5dTSDimRysxr0hbUO/NK1pJuwy/lmV5Gw8kY0XqkMhhOSkk6ETFR2dpXvGHio91qUMihwGVkKCzRsWHSvL2VHysSDYriVQhPYOXwUI0KslVfLRXV3yc5PoJ8LQvtRxlWX7/DNN5uYovaOhdo+JDJXl7KskX6qGHDs2RVQSDaVR8HKr4aO2Fio9l+iGTZ+J6hjWDU/HRCxUfC/NDJiebrCQYTaPi460js639qpJ8GXLZbtL6yujiwVb1/RXs75mKj/z9EF8Es+ZkE1PZqCR3ZLadZsWHeUVmsggJmJqKj168jpZZFR8ZyWG7yQCR2WhUfKgkb0fFR2ZyCAnzCGanUUmu4qOdZsVHLg88W6VcBtcwOyo+epHmFZ9Vks+XkICOGhUfv5hXtPZaxcc8CQnoSTzv5FAleWtpXvFbzCscmZ0JIQE92qj4MK9op674UEk+A0ICBhBHZt/EkVnzinZeqviYnpCAAcWR2SMVH52o+JiQkIARqPjorK74uDavGJeQgJFsVHyoJG/nJxUf4xISMLKNSnJHZtv5WvFhXjEsIQETUfHR2bOYV1ybVwxHSMDEGhUfH7wXrbxoVJKr+OiZkIAZiHnFiYqPTlR8DEBIwIyo+OhFXfGhkrwHQgJmKFV8xLxCxUc7zUpyR2Y7EBIwY3FkViV5eyo+OhISMHONSnIVH+3VFR9n5hX7ERKQiY2KD/OKdt6p+NiPkIDMRMXHoYqP1lR87EFIQIZUfPSirvi4MK/YTkhAxjYqPm68l628Ukm+nZCABYh5xaGKj05UfDxASMCCqPjorFnxsfp5RSEkYHkaFR8/OjLb2stGJfmqt6CEBCxUzCuOVJJ3svqKDyEBC9eoJFfx0U6z4uM4x0+gCyEBK6Hio7M0r/hjbRUfQgJWpFHxoZK8vVVVfAgJWKFGJbmKj/bqio+TXD+BXQgJWLGNig/ziv2lecVvS64kFxKwco2Kj0MVH629WGrFh5AAvlDx0YvFVXwICeAbjYqPt7agWvt1KZXkQgJ4UMwrDlSSt/asUfFxmOnnICSA7TYqyR2ZbScdmf2c65FZIQE8ScVHL95Fy2xWp6CEBLCzRsWHSvJ26lNQ2awqhASwt0YluYqPdupVxexnFUICaEXFR2cvYlYx6zu2hQTQSaPi4xfzilZ+ixNQs9x+EhJAL6qqulDx0drLuW4/CQmgNxsVH+YV+0nbT5dzuwFPSAC9iyOzb+LIrHnF7uob8M7m8oKEBDCYODJ7pOJjb+/m8nxtIQEMTsVHK69j+2nSoBASwCg2Kj5Uku/mp6mDQkgAo9qoJHdk9mk/TXnySUgAk1DxsZf65NPoQSEkgEk1Kj4+eCce9WyKoBASwORiXnGi4uNJoweFkABmQ8XHTlJQXIw1zBYSwOykio+YV6j4eNiLsU49CQlgtuLIrEryh41yPFZIALPWqCRX8fG9FBSDVngICSALGxUf5hX/ej1k15OQALISFR+HKj6+8W6o9lghAWRHxceDzoY4GiskgGxtVHzcrPydHORorJAAshfzikMVH1+Oxp73+QsKCWAxVHx88aosy5O+fjEhASxKo+LjxxUfmf2tr/mEkAAWKeYVa6746GXbSUgAi7biio+f+rh/QkgAq7DSio90/8RRl19ASACr0aj4WFMleafVhJAAVqdRSb6Gio+07XTa9j8WEsBqbVR8LHlecVKW5UGb/1BIAKvWqPg4XHDFx7O2p52EBMD3FR9L3IJ62WaILSQAGlLFR6wqlnjX9t6rCSEBsKFx1/bPC5tVvNi3UlxIAGwRq4qDhR2X3eukk5AAeESsKo4WtP30Yp8jsUICYAex/fR2IdfqZNfnTggJgB3FfRX/WcCcIh2J3Wk2ISQA9pDu1i6K4mgBQbHTMyeEBMCeFhIUO510EhIALSwkKJ4cYAsJgJYWEBQvnroLW0gAdBBBcZzxNXx0y0lIAHQUN93lejz29WMNsUICoAdxPDbXp95tXQkJCYCexFPvbjK8nluPwwoJgH4dZzjITgPsw4f+gZAA6FF6LsWudzPPzIOrCSEB0LOqqi4yfMrdg3MJIQEwjDeZbTs9K8vyu6AQEgADSBXj+z67YQa+u7FOSAAMpKqqs8xOO1lJAIxsp7bVmfjulJOQABhQ3I2d0+NPv9lyEhIAw8tpNvHNlpOQABhYZquJl82fCAmAcWSzmmjWhwsJgBHEauIuk2stJAAmkMtqQkgATOAik7uwvx6DFRIAI4m7sC8yuN7P6vslhATAuHIIieTL0+qEBMCIoiE2my0nIQEwvhxWE1+G10ICYHyXGVxz200AE8lhJfGiEBIA44tTTrOvEE8nnIQEwDRy2HJ6LiQApnGdwXU/EhIA08ghJMwkAKZQVVUOIWEmATChuQ+vzSQAJvT33C++kACYztxPONluAmCrZ0ICYDqzH14LCYDpmEkAkC8hAcBWQgKArYQEAFsJCQC2EhIAbCUkANhKSACwlZAAYCshATCdo7lfeyEBwDb3QgJgOoczv/bXQgJgOs/nfu2FBMB0Xs782v8tJAAmUJbl3LeaCttNANPJISRsNwFMJIeQuBQSANOY/T0ShZUEwPjKskynmn6a+6WvqspKAmACOawi7gorCYBJHGdw2W8LIQEwiRxC4rIQEgDjKssyBcSzDC67lQTABHJYRSTXhZAAGE+casoiJKqqEhIAI8tlq+mq/oGQABjPSSbX+rL+gZAAGEFZlkc53EAXhATAyHJZRXy507r+sZAAGFhZlgdFUbzK5DpfNX8iJACGd57RNb5s/kRIAAwoZhFzfwJd00XzJ0ICYFinGV3fu/r+iJqQABhIWZZvMltFXG7+DSEBMIC4u/oss2t7sfk3hATAMM4zubu6dl9VlZAAGFo0veZy5LX2XUAUQgKgX7HNlNOR19qDr1lIAPTrIrNtpiJONX03tC6EBEB/yrI8y+w0U23rykdIAPQgjru+y/RaCgmAoZRleZjhcdfap6qqbrf9QyEB0EEExGWGc4jao+EmJABaWkBAbB1Y14QEQAtR/53bDXObnuyV+p/RXxJA5hawgijiDusn7+ewkgDYw0ICoth10C4kAHYUdRtLCIh7IQHQo7Is0zOq/1hAQCRnVVX9vcu/aCYB8IhGF1NuhX3b7LyKKIQEwHYxf0hdTC8WdJlOd11FFLabAB5WlmU6Hvp5YQGR7ovY685wKwmAhlg9pO2lnxZ4XU72/Q+sJABi9hAtrp8XGhBXDz157ilCAli9OLl0m3GL6y7etPmPbDcBq1WW5VFsLS1p7vCQ9481vT5GSACr0+hdyvEBQfu661JjbrsJWI2YO6RTS3+tJCCSN/sced1kJQGsQjw57mwhd0zv6sNTVeBPERLAosXc4WyhJ5Yec7dLFfhTbDcBi5TmDmVZprnDnysMiOS4yzZTzUoCWJToWjqJjzVtLTWl00zXffxCQgJYjKjyPlvBkdbHpJvmOm8z1YQEkL2o0jhb0YmlbVLD63Gfv6CQALIVW0spHF57F7846mMO0WRwDWQp7ne4FRBfve1rDtFkJQFkZUVVGvv4WFXV+RC/sJAAsrCyKo19fKqqqlV53y5sNwGz1qjwXlOVxq5u2ra77spKApitlVZp7OpmiEH1JiEBzM6KqzR2dd+1uG9XQgKYjZg7pHB45V3Z6j5WEL2fZHqIkAAmp0pjZ6MGRCEkgKnF3OHUkdYnjR4QhZAAphJzh1MnlnYySUAUQgIYmyqNvd1F7ffoAVEICWBMUaVh7rC7UY65PkZIAINT4d3KVV8PDupCSACDUaXR2schqzb2oZYD6J0qjU7eziUgCisJoG9lWZ7EqSVzh/3cx/bS5ZxelJAAeqFKo5PJB9Tb2G4COklzh7IsL4qi+FNAtPKhqqrDOQZEYSUBtNWo0vjVRWxllttLm4QEsDcV3p19GqvFtSvbTcDO0tyhLMv0ne/vAqKVtHr4paqqye9/2JWQAJ4Uc4fzmDs40trOx6IoDqqqusjpRdtuAh6lSqOzu9hamvXsYRshATxIlUZnaWvptKqqszm8mLaEBPCNsiwPIxxsK7WXtpZOcpk7PMZMAviiUaXxWUC0lkr5/pNqNZYQEIWVBFCo0ujDXawcshpK70JIwIpFlca5uUNr97E1d7aUlcMmIQErpMK7Fx9jMH27gM9lKyEBK6JKoxc3sbWU5ZHWfQkJWAlVGp3dRzicZ/557EVIwMKp8O7F+yXPHR4jJGChYu6QTiy99h639ilWD4ueOzxGSMDCNOYOqjTay7pKo09CAhZElUZni6jS6JOQgAVQpdGLDxEQq5s7PEZIQMZia+nM3KGTq5g7XGf8OQxGSECmVHh3ttgqjT4JCciMKo3O7uM462nmn8cohARkQpVGL1ZRpdEnVeEwc40K778ERGtp7vBzVHgLiD1YScCMqdLo7C5WDquq0uiTkIAZUqXRi9VWafRJSMCMxNwhhcMr70trq6/S6JOQgBlQpdGLVVV4j0VIwMRi7nDqSGtrqjQGJCRgIjF3OHViqRNVGgMTEjAyVRq9uIqWVnOHgblPAkYUVRq3AqK1dKT1l6qqjgTEOKwkYAQqvDtTpTERIQEDUqXRi49xasncYQK2m2AAqjR6keYO/4kqDQExESEBPSvL8iTmDu9c21bS3OFtzB0842FitpugJ6o0OruP66dKY0aEBHSkSqMXqjRmSkhAS40qjV9dw9ZUacxcDiHxfAavAb6hwruz+wgHFd4zl8Pg2v4us5HmDmVZpu96fxcQraUqjQMBkYf/iVMYwCNi7nDqTulOVGlk6IccQiK+QGGq338pHK4FRGt38ehQVRoZyuU+CSHB6FKVRlmWtzGYtrW0vzR3+G9VVQcG0/lKIZHDeeTDGbwGVqIsy8OYO/yha6m1jzF38IyHzP2QyR2NVhIMrlGl8VmVRmuqNBYml/skrCQYVFRpnNpWau0ujrReZPr62aKsqip9gVzP/ahpVVXlDF4GCxNVGue2lVpTpbFw9eB69m9u2ieewctgIdKJuZg7/CkgWktzh8P0jAcBsVx1SOQwlziawWsgczF3OFXh3clNHGl1z8MKZLOSEBJ0FVUat7qWWruPCu9DR1rXow6JHN5wIUErUaVxrUqjk/eqNNapDokclozPYsgIO4m5w3nMHXSAtZMqvH80d1ivLyER+4r3GVyF4xm8BmauMXdQpdFeXaVxbO6wbs1ajhyG10KCR6Uqjfi9rEqjHVUafCO3kHhhy4mHqNLoxQdVGmxqhkQu3zW8mcFrYCZia+lclUYndZXGibkDm77ccV38W8f9VyZX6H/9ZkaVRmeqNHjS15VEDKfuMrlkVhMrFkda0+/X3wREK2nu8D7mDgKCR20+TyKXLaeTGbwGRqZKoxdfqzQW8LkwglxD4kXcPcsKNCq8VWm0d6VKgza+ziSK/OYSd2m5PIPXwYDim4Ez20qtpS3kU3dK09Y3K4nM5hJWEwumSqMX72NrSUDQ2kPPuM5pkGVfdWFi7nChSqMTVRr05qGQyOkuyxdRv0DmNqo0Xnk/W7lRpUHfvplJ1Mqy/DujJf59LKl9UWQqtg1PnVhq7T7mDu6UpncPrSSKzLacnsVgk8w0qjR+FxCtqdJgUEsIieRVFLuRAVUavbiKuYMqDQb14HZTkd+WUxFL7gNfMPMWc4cTJ5ZaU6XBqLatJIoMVxPPMnzNq5FWelGlocK7HVUaTOKxkMjxbPVLp53mpVGlocK7vY+xSvZ7m9Ft3W4q/vkCv830C/tnD0yZVpo7xImld2u+Dh1dxdZSDs96YaEeW0kUGZ8aukgnZ2bwOlYpKrxvBURrae7wtqqqIwHB1J5aSaTvBv8v03cp3Vh0ZJA9nnhq4Jk7pVu7j+t35vctc/HoSiJ+o37M9N1Kf1BdRtAxIFUavfhUV3gLCObk0ZVEETc8xXn2XFlRDCQC+CROLNHOTcwdzNCYpSdDovjnD4PLzG96EhQ9U6XR2X2Eg4ZWZu2pwXUt96N3tp56EhXeqjS6qas0BASzt9NKoljGaqKwomgvHkiVvll4nevnMAPpSKsnw5GVXVcSRaY3121KK4prx2P306jwFhDt3MW9O0cCgtzsvJIolrOaKGI/+I16g8dFaeKZbaXWVHiTvX1WEsWCngSXuoP+iIfrs6FR4a1Ko72PKrxZgr1WEsWyVhO1NKfwJC9VGn1RpcGi7LuSKBb4XOl6TnEyg9cyGVUanaW5wy+qNFiavVcSxT9/oJwvdIi5utMnUaVxblupNVUaLFrbkDiI0y5LfS7A+6V/0cd7mP5wezWDl5OrjzGYXv1WJcvVZrupiC+KJQ/kUs3E7RK3oOLRoem9+0tAtHYTR1rd88DitVpJ1MqyvF5BodtdfLeY9X0ijZ4ljw5tT5UGq9M1JI6i+XMNstx7dqd0bxa/BQkP6RQSxT9/CJ2t8ERM2os+n2tzZ6wa0o1wbxZ2XHkKqjRYtT5C4nkMsdd4OiZtRV1EYEx+7DHukK4/bCl1cxfhoMKbVescEsUynjnRh/sIjPSHyuUY33nGdT+KD0PofqjSgIZeQqL4twTOw2f+dR8rrMv4699tvyuN1VoKhIP466FtpEF8iIAwd4DQW0gUy6zsGMrVxq97Gx9HG3//wE1uo1ClAVv0HRLP4w87++Hk4C7CQRswbNHqZrptYpl+7GIzc2kr8H1VVQcCAh7Xa0gU/wTFZZwphzlKx5cPq6paWlElDKLX7aamBZcAkqerGEo70gp7GDIknsfJnqXXdjBvqjSgg8FCojDIZnqqNKCjQUOi+PeGr0tBwYg+xepBlQZ0NHhIFIKC8dxEOJg7QE96P930kLhJadWPB2VQae7w36qqDgUE9GuUkCj+CYo0OHzr/aNnqUrjQNcSDGOU7aamsixTffXv3k86UuENIxhtJVGzoqCjVKXxS1VVRwIChjd6SBSCgnZUacAERt9uaorHn1449cQTPsapJfc7wMgmDYnC8Vgep0oDJjbJdlNTHI89ijPuUMTc4W3MHQQETGjylUQtKjwuPLRo1dLc4UyVBszHbEKipj12tVRpwAxNvt20qaqqN3Hy6X5er4yBpG3Gn6uqOhYQMD+zW0nUYqB94RnPi6XCGzIwu5VELQbah3H8kWWpqzQEBMzcbFcSTVHlceaYbPZUaUBmsgiJ4p+gOCiK4tzppyzdRTg4zgqZme1206b03Wc6N58qoQ21s9Gs0hAQkKFsVhJNsapI20+v5vOq2KBKAxYgy5ColWV5HGHhBNR8XEU4XK/9QsASZB0Sxb93ap/Eh8H2dO4iHDS0woJkHxK12II6dbf26O6jRuN0ZZ83rMJiQqJmXjEaPUuwAosLiVo8q+JEWPROOMCKLDYkaraheiMcYIUWHxK1CIu0snhjwL2XuwjZC+EA67OakKjFaajjCIyf5vGqZulTrBrcBAcrtrqQaIqm2TdWF1/dxZbShX4loFh7SDTFjXn1x5oC4y4q2c/dAAdsEhIPaATG0ULv5r6JYLgQDMBjhMQTYkvqqPGR4yojrRYu6w9bScCuhMSeGqFxGB9zHH6n/qTr+BAKQGtCogdx495BfKQfPx8pPFIY/N0IhFvbR0CfhMSA4rjtYfwf6hAptvx803UEQO3rzx1LBUZRFMX/A6YMPZ79XaNcAAAAAElFTkSuQmCC";
-
-  // src/assets/player-icons/skip-back.png
-  var skip_back_default = "data:image/png;base64,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";
-
-  // src/assets/player-icons/skip-forward.png
-  var skip_forward_default = "data:image/png;base64,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";
-
   // src/settings/features/playerControlIcons.ts
-  var STYLE_ID6 = "liquify-player-control-icons-style";
-  var ICON_CLASS = "liquify-player-control-icon";
-  var OBSERVER_KEY = "liquifyPlayerControlIconsObserver";
   var PLAYER_ICONS_KEY = "liquify-player-icons";
-  function isPlayerControlIconsEnabled() {
-    return (localStorage.getItem(PLAYER_ICONS_KEY) || "on") === "on";
-  }
-  var CONTROL_SELECTORS = {
-    playPause: 'button[data-testid="control-button-playpause"]',
-    skipBack: 'button[data-testid="control-button-skip-back"]',
-    skipForward: 'button[data-testid="control-button-skip-forward"]',
-    shuffle: '.player-controls__left button[aria-label*="Shuffle"]',
-    repeat: 'button[data-testid="control-button-repeat"]'
-  };
-  function getPlayerControlIconCss() {
-    return `
-${CONTROL_SELECTORS.playPause} .e-10451-button__icon-wrapper svg,
-${CONTROL_SELECTORS.skipBack} .e-10451-button__icon-wrapper svg,
-${CONTROL_SELECTORS.skipForward} .e-10451-button__icon-wrapper svg {
-  display: none !important;
-}
-
-.${ICON_CLASS} {
-  display: block !important;
-  width: var(--liquify-player-control-icon-size, 22px) !important;
-  height: var(--liquify-player-control-icon-size, 22px) !important;
-  flex: 0 0 auto !important;
-  background-color: #fff !important;
-  -webkit-mask: var(--liquify-player-control-icon) center / contain no-repeat !important;
-  mask: var(--liquify-player-control-icon) center / contain no-repeat !important;
-  pointer-events: none !important;
-}
-
-${CONTROL_SELECTORS.playPause} .${ICON_CLASS} {
-  --liquify-player-control-icon-size: 16px;
-}
-
-${CONTROL_SELECTORS.shuffle},
-${CONTROL_SELECTORS.repeat},
-${CONTROL_SELECTORS.shuffle} .e-10451-button__icon-wrapper,
-${CONTROL_SELECTORS.repeat} .e-10451-button__icon-wrapper,
-${CONTROL_SELECTORS.shuffle} .e-10451-icon,
-${CONTROL_SELECTORS.repeat} .e-10451-icon {
-  color: #fff !important;
-  fill: #fff !important;
-}
-
-${CONTROL_SELECTORS.shuffle}[aria-checked="true"],
-${CONTROL_SELECTORS.repeat}[aria-checked="true"],
-${CONTROL_SELECTORS.shuffle}[aria-label*="deaktivieren"],
-${CONTROL_SELECTORS.repeat}[aria-label*="deaktivieren"],
-${CONTROL_SELECTORS.shuffle}[aria-label*="disable"],
-${CONTROL_SELECTORS.repeat}[aria-label*="disable"],
-${CONTROL_SELECTORS.shuffle}.encore-internal-color-text-bright-accent,
-${CONTROL_SELECTORS.repeat}.encore-internal-color-text-bright-accent,
-${CONTROL_SELECTORS.shuffle}[aria-checked="true"] .e-10451-button__icon-wrapper,
-${CONTROL_SELECTORS.repeat}[aria-checked="true"] .e-10451-button__icon-wrapper,
-${CONTROL_SELECTORS.shuffle}[aria-label*="deaktivieren"] .e-10451-button__icon-wrapper,
-${CONTROL_SELECTORS.repeat}[aria-label*="deaktivieren"] .e-10451-button__icon-wrapper,
-${CONTROL_SELECTORS.shuffle}[aria-label*="disable"] .e-10451-button__icon-wrapper,
-${CONTROL_SELECTORS.repeat}[aria-label*="disable"] .e-10451-button__icon-wrapper,
-${CONTROL_SELECTORS.shuffle}.encore-internal-color-text-bright-accent .e-10451-button__icon-wrapper,
-${CONTROL_SELECTORS.repeat}.encore-internal-color-text-bright-accent .e-10451-button__icon-wrapper,
-${CONTROL_SELECTORS.shuffle}[aria-checked="true"] .e-10451-icon,
-${CONTROL_SELECTORS.repeat}[aria-checked="true"] .e-10451-icon,
-${CONTROL_SELECTORS.shuffle}[aria-label*="deaktivieren"] .e-10451-icon,
-${CONTROL_SELECTORS.repeat}[aria-label*="deaktivieren"] .e-10451-icon,
-${CONTROL_SELECTORS.shuffle}[aria-label*="disable"] .e-10451-icon,
-${CONTROL_SELECTORS.repeat}[aria-label*="disable"] .e-10451-icon,
-${CONTROL_SELECTORS.shuffle}.encore-internal-color-text-bright-accent .e-10451-icon,
-${CONTROL_SELECTORS.repeat}.encore-internal-color-text-bright-accent .e-10451-icon {
-  color: var(--spice-button-active, var(--spice-button, var(--accent-color, #1ed760))) !important;
-  fill: var(--spice-button-active, var(--spice-button, var(--accent-color, #1ed760))) !important;
-}
-
-span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverted-light-set.e-10451-button-icon-only--small {
+  var STYLE_ID13 = "liquify-player-control-icons-style";
+  var ICON = "liquify-player-icon";
+  var PLAYING = "is-playing";
+  var SKIPPING = "is-skipping";
+  var OBSERVER_KEY = "liquifyPlayerControlIconsObserver";
+  var PRESS_KEY = "liquifyPlayerControlIconsPress";
+  var control = (id) => `button[data-testid="control-button-${id}"]`;
+  var PLAY = control("playpause");
+  var BACK = control("skip-back");
+  var FORWARD = control("skip-forward");
+  var SHUFFLE = control("shuffle");
+  var REPEAT = control("repeat");
+  var TRANSPORT_BUTTONS = [PLAY, BACK, FORWARD];
+  var TRANSPORT = TRANSPORT_BUTTONS.join(", ");
+  var SKIPS = `${BACK}, ${FORWARD}`;
+  var eachTransport = (suffix) => TRANSPORT_BUTTONS.map((selector) => selector + suffix).join(", ");
+  var SKIP_ROW = `<g class="${ICON}__nudge"><g class="${ICON}__row" fill="currentColor" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"><path class="${ICON}__in" d="M-6.4 5.6 1.6 12 -6.4 18.4Z"/><path d="M3.2 5.6 11.2 12 3.2 18.4Z"/><path class="${ICON}__out" d="M12.8 5.6 20.8 12 12.8 18.4Z"/></g></g>`;
+  var svg = (body) => `<svg class="${ICON}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${body}</svg>`;
+  var PLAY_SHAPE = `<g fill="currentColor" stroke="currentColor" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round"><path class="${ICON}__a" d="M9.4 6.6 L13.5 9.3 L13.5 14.7 L9.4 17.4 Z"/><path class="${ICON}__b" d="M13.5 9.3 L17.6 12 L17.6 12 L13.5 14.7 Z"/></g>`;
+  var CONTROLS = [
+    [PLAY, svg(PLAY_SHAPE)],
+    [FORWARD, svg(SKIP_ROW)],
+    [BACK, svg(`<g transform="translate(24 0) scale(-1 1)">${SKIP_ROW}</g>`)]
+  ];
+  var SCALE_PLAY_BUTTON = `${PLAY} span[class*="button-icon-only--small"] {
   transform: scale(1.45) !important;
   transform-origin: center !important;
+}`;
+  var BARE_PLAY_BUTTON = `${PLAY},
+${PLAY}:hover,
+${PLAY}:active,
+${PLAY} [class*="button-primary__inner"],
+${PLAY}:hover [class*="button-primary__inner"],
+${PLAY}:active [class*="button-primary__inner"] {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+${PLAY} [class*="button-primary__inner"]::after { display: none !important; }`;
+  var ACTIVE_TINT = ".encore-internal-color-text-bright-accent";
+  var ACCENT_COLOR = "var(--spice-button-active, var(--spice-button, var(--accent-color, #1ed760)))";
+  function tintedControls(color) {
+    const targets = [SHUFFLE, `button[data-encore-id="buttonTertiary"][aria-label*="Shuffle"]`, REPEAT];
+    const scoped = (suffix, state = "") => targets.map((t) => t + state + suffix).join(", ");
+    const off = (suffix) => scoped(suffix, `:not(${ACTIVE_TINT})`);
+    const on = (suffix) => scoped(suffix, ACTIVE_TINT);
+    return `${off("")}, ${off(" *")} {
+  color: ${color} !important;
+}
+${on("")}, ${on(" *")} {
+  color: ${ACCENT_COLOR} !important;
+}
+${scoped(" svg")}, ${scoped(" path")} {
+  fill: currentColor !important;
+}`;
+  }
+  function getPlayerControlIconCss() {
+    return `
+/* Spotify's glyph keeps its box \u2014 the button sizes itself off it \u2014 and only
+   stops drawing. Ours floats centred on the button instead of replacing
+   anything inside it, so no Encore-internal element has to be found. */
+${TRANSPORT} {
+  position: relative !important;
+  transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1) !important;
+}
+${eachTransport(":active")} { transform: scale(var(--liquify-player-press-scale, 0.9)) !important; }
+${eachTransport(` svg:not(.${ICON})`)} { visibility: hidden !important; }
+
+.${ICON} {
+  position: absolute !important;
+  left: 50% !important;
+  top: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  width: var(--liquify-player-icon-size, 26px) !important;
+  height: var(--liquify-player-icon-size, 26px) !important;
+  color: var(--liquify-player-icon-color, #fff) !important;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+${BARE_PLAY_BUTTON}
+
+/* Bigger than the skips, not equal: the triangle fills far less of its viewBox
+   than the skip pair does, and play is the primary control. */
+${PLAY} .${ICON} { --liquify-player-icon-size: 36px; }
+
+/* Play/pause \u2014 shape change, not an icon swap. */
+.${ICON}__a, .${ICON}__b { transition: d 0.46s cubic-bezier(0.32, 1.35, 0.46, 1); }
+.${ICON}__a { d: path("M9.4 6.6 L13.5 9.3 L13.5 14.7 L9.4 17.4 Z"); }
+.${ICON}__b { d: path("M13.5 9.3 L17.6 12 L17.6 12 L13.5 14.7 Z"); }
+.${ICON}.${PLAYING} .${ICON}__a { d: path("M7.8 6 L9.3 6 L9.3 18 L7.8 18 Z"); }
+.${ICON}.${PLAYING} .${ICON}__b { d: path("M14.7 6 L16.2 6 L16.2 18 L14.7 18 Z"); }
+
+/* Optical centring: a triangle carries its mass at the flat edge, so a
+   geometrically centred pair reads as shifted backwards. The nudge lives in
+   the mirrored group, so it applies to both directions. */
+.${ICON}__nudge { transform-box: view-box; transform-origin: 0 0; transform: translateX(1.1px); }
+.${ICON}__row { transform-box: view-box; transform-origin: 0 0; }
+.${ICON}__in { opacity: 0; }
+
+/* One press advances the row by exactly one position (9.6 units): the spare
+   triangle fades in, the leading one runs out of the viewBox. End state equals
+   start state, which is why dropping the class again is invisible. */
+.${SKIPPING} .${ICON}__row { animation: liquifySkipFlow 0.52s cubic-bezier(0.3, 1.75, 0.44, 1) both; }
+.${SKIPPING} .${ICON}__in { animation: liquifySkipIn 0.52s cubic-bezier(0.32, 0.72, 0.22, 1) both; }
+.${SKIPPING} .${ICON}__out { animation: liquifySkipOut 0.52s cubic-bezier(0.32, 0.72, 0.22, 1) both; }
+
+@keyframes liquifySkipFlow { from { transform: translateX(0); } to { transform: translateX(9.6px); } }
+@keyframes liquifySkipIn { 0% { opacity: 0; } 45%, 100% { opacity: 1; } }
+@keyframes liquifySkipOut { 0% { opacity: 1; } 55%, 100% { opacity: 0; } }
+
+${tintedControls("#fff")}
+
+/* Both are role=switch, so aria-checked carries the engaged state \u2014 repeat
+   reports "mixed" for repeat-one, hence the negated match rather than ="true".
+   The descendants come along for the same reason as above. */
+${SHUFFLE}[aria-checked]:not([aria-checked="false"]),
+${SHUFFLE}[aria-checked]:not([aria-checked="false"]) *,
+${REPEAT}[aria-checked]:not([aria-checked="false"]),
+${REPEAT}[aria-checked]:not([aria-checked="false"]) * {
+  color: ${ACCENT_COLOR} !important;
+}
+
+${SCALE_PLAY_BUTTON}
+
+@media (prefers-reduced-motion: reduce) {
+  ${TRANSPORT}, .${ICON}__a, .${ICON}__b { transition: none !important; }
+  .${SKIPPING} .${ICON}__row,
+  .${SKIPPING} .${ICON}__in,
+  .${SKIPPING} .${ICON}__out { animation: none !important; }
 }
 `;
   }
   function getPlayerControlIconsDisabledCss() {
     return `
-span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverted-light-set.e-10451-button-icon-only--small {
-  transform: scale(1.45) !important;
-  transform-origin: center !important;
-  color: var(--encore-icon-fill, currentColor) !important;
-}
+${SCALE_PLAY_BUTTON}
 
-.e-10451-legacy-button:hover {
+${BARE_PLAY_BUTTON}
+
+${eachTransport("")},
+${eachTransport(" *")} {
   color: #fff !important;
 }
+${eachTransport(" svg")}, ${eachTransport(" path")} { fill: currentColor !important; }
+
+[class*="-legacy-button"]:hover { color: #fff !important; }
 `;
   }
-  function disablePlayerControlIcons() {
-    updateStyle(STYLE_ID6, getPlayerControlIconsDisabledCss());
-    document.querySelectorAll(`.${ICON_CLASS}`).forEach((icon) => icon.remove());
+  function isPlayerControlIconsEnabled() {
+    return (localStorage.getItem(PLAYER_ICONS_KEY) || "on") === "on";
   }
-  function getControlWrapper(button) {
-    return button?.querySelector(".e-10451-button__icon-wrapper");
+  function removeIcons() {
+    document.querySelectorAll(`.${ICON}`).forEach((icon) => icon.remove());
   }
-  function getPlayPauseIcon(button) {
-    const label = (button.getAttribute("aria-label") || "").toLowerCase();
-    const isPauseLabel = label.includes("pause") || label.includes("pausieren");
-    const isPlaying = Boolean(window.Spicetify?.Player?.isPlaying?.());
-    return isPauseLabel || isPlaying ? pause_default : play_default;
-  }
-  function ensureIconElement(wrapper) {
-    let icon = wrapper.querySelector(`.${ICON_CLASS}`);
+  function ensureIcon(button, markup) {
+    let icon = button.querySelector(`.${ICON}`);
     if (!icon) {
-      icon = document.createElement("span");
-      icon.className = ICON_CLASS;
-      icon.setAttribute("aria-hidden", "true");
-      wrapper.appendChild(icon);
+      const holder = document.createElement("div");
+      holder.innerHTML = markup;
+      icon = holder.firstElementChild;
+      button.appendChild(icon);
     }
     return icon;
   }
-  function setControlIcon(selector, iconUrl) {
-    const wrapper = getControlWrapper(document.querySelector(selector));
-    if (!wrapper) return;
-    const icon = ensureIconElement(wrapper);
-    const value = `url("${iconUrl}")`;
-    if (icon.style.getPropertyValue("--liquify-player-control-icon") !== value) {
-      icon.style.setProperty("--liquify-player-control-icon", value);
+  function isPlaying(button) {
+    const label = (button.getAttribute("aria-label") || "").toLowerCase();
+    return /paus/.test(label) || Boolean(window.Spicetify?.Player?.isPlaying?.());
+  }
+  var PRESS_GRACE_MS = 500;
+  var RECONCILE_MS = 650;
+  function setPlayingState(icon, playing) {
+    const el = icon;
+    const pressedAt = Number(el.dataset.liquifyPressed || 0);
+    if (pressedAt) {
+      if (icon.classList.contains(PLAYING) !== playing && performance.now() - pressedAt < PRESS_GRACE_MS) {
+        return;
+      }
+      delete el.dataset.liquifyPressed;
     }
+    icon.classList.toggle(PLAYING, playing);
   }
   function applyPlayerControlIcons() {
     if (!isPlayerControlIconsEnabled()) {
-      disablePlayerControlIcons();
+      removeIcons();
       return;
     }
-    const playPauseButton = document.querySelector(CONTROL_SELECTORS.playPause);
-    if (playPauseButton) {
-      setControlIcon(CONTROL_SELECTORS.playPause, getPlayPauseIcon(playPauseButton));
+    for (const [selector, markup] of CONTROLS) {
+      const button = document.querySelector(selector);
+      if (!button) continue;
+      const icon = ensureIcon(button, markup);
+      if (selector === PLAY) setPlayingState(icon, isPlaying(button));
     }
-    setControlIcon(CONTROL_SELECTORS.skipBack, skip_back_default);
-    setControlIcon(CONTROL_SELECTORS.skipForward, skip_forward_default);
+  }
+  function installPressFeedback(win) {
+    if (win[PRESS_KEY]) return;
+    win[PRESS_KEY] = true;
+    document.addEventListener("pointerdown", (event) => {
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      const target = event.target;
+      const playIcon = target?.closest?.(PLAY)?.querySelector(`.${ICON}`);
+      if (playIcon) {
+        playIcon.classList.toggle(PLAYING);
+        playIcon.dataset.liquifyPressed = String(performance.now());
+        window.setTimeout(applyPlayerControlIcons, RECONCILE_MS);
+      }
+      const icon = target?.closest?.(SKIPS)?.querySelector(`.${ICON}`);
+      if (!icon) return;
+      icon.classList.remove(SKIPPING);
+      void icon.getBoundingClientRect();
+      icon.classList.add(SKIPPING);
+    }, true);
+    document.addEventListener("animationend", (event) => {
+      if (event.animationName !== "liquifySkipFlow") return;
+      event.target.closest?.(`.${ICON}`)?.classList.remove(SKIPPING);
+    }, true);
   }
   function installPlayerControlIcons() {
-    const anyWin = window;
+    const win = window;
     if (!isPlayerControlIconsEnabled()) {
-      anyWin[OBSERVER_KEY]?.disconnect?.();
-      anyWin[OBSERVER_KEY] = void 0;
-      disablePlayerControlIcons();
+      win[OBSERVER_KEY]?.disconnect?.();
+      win[OBSERVER_KEY] = void 0;
+      updateStyle(STYLE_ID13, getPlayerControlIconsDisabledCss());
+      removeIcons();
       return;
     }
-    updateStyle(STYLE_ID6, getPlayerControlIconCss());
+    updateStyle(STYLE_ID13, getPlayerControlIconCss());
     applyPlayerControlIcons();
-    if (anyWin[OBSERVER_KEY]) return;
+    installPressFeedback(win);
+    if (win[OBSERVER_KEY]) return;
     let scheduled = false;
-    const schedule = () => {
+    const observer = new MutationObserver(() => {
       if (scheduled) return;
       scheduled = true;
       requestAnimationFrame(() => {
         scheduled = false;
         applyPlayerControlIcons();
       });
-    };
-    const observer = new MutationObserver(schedule);
-    anyWin[OBSERVER_KEY] = observer;
+    });
+    win[OBSERVER_KEY] = observer;
     observer.observe(document.body, {
       attributes: true,
-      attributeFilter: ["aria-label", "class"],
+      attributeFilter: ["aria-label"],
       childList: true,
       subtree: true
     });
-    anyWin.Spicetify?.Player?.addEventListener?.("onplaypause", applyPlayerControlIcons);
-    anyWin.Spicetify?.Player?.addEventListener?.("songchange", applyPlayerControlIcons);
+    win.Spicetify?.Player?.addEventListener?.("onplaypause", applyPlayerControlIcons);
+    win.Spicetify?.Player?.addEventListener?.("songchange", applyPlayerControlIcons);
   }
   function setPlayerControlIcons(mode) {
     const m2 = mode === "on" ? "on" : "off";
@@ -4931,12 +6774,12 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
 
   // src/settings/features/progressBarHeight.ts
   var PROGRESS_BAR_HEIGHT_KEY = "liquify-progress-bar-height";
-  var PROGRESS_BAR_HEIGHT_DEFAULT = 4;
+  var PROGRESS_BAR_HEIGHT_DEFAULT = 6;
   var PROGRESS_BAR_COMPAT_KEY = "liquify-progress-bar-compat";
   function isProgressBarCompat() {
     return readLS(PROGRESS_BAR_COMPAT_KEY, "off") === "on";
   }
-  function applyCss2(px) {
+  function applyCss5(px) {
     updateStyle(
       "liquify-progress-bar-height",
       isProgressBarCompat() ? "" : `.x-progressBar-progressBarBg, .x-progressBar-sliderArea { --progress-bar-height: ${px}px !important; height: ${px}px !important; }`
@@ -4944,10 +6787,10 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
   }
   function setProgressBarHeight(px) {
     localStorage.setItem(PROGRESS_BAR_HEIGHT_KEY, String(px));
-    applyCss2(px);
+    applyCss5(px);
   }
   function ensureProgressBarHeightApplied() {
-    applyCss2(readNum(PROGRESS_BAR_HEIGHT_KEY, PROGRESS_BAR_HEIGHT_DEFAULT));
+    applyCss5(readNum(PROGRESS_BAR_HEIGHT_KEY, PROGRESS_BAR_HEIGHT_DEFAULT));
   }
   function setProgressBarCompat(enabled, reapplyRadius) {
     localStorage.setItem(PROGRESS_BAR_COMPAT_KEY, enabled ? "on" : "off");
@@ -4958,7 +6801,7 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
   // src/settings/features/progressBarRadius.ts
   var PROGRESS_BAR_RADIUS_KEY = "liquify-progress-bar-radius";
   var PROGRESS_BAR_RADIUS_DEFAULT = 10;
-  function applyCss3(px) {
+  function applyCss6(px) {
     updateStyle(
       "liquify-progress-bar-radius",
       isProgressBarCompat() ? "" : `.x-progressBar-progressBarBg, .x-progressBar-sliderArea { border-radius: ${px}px !important; }`
@@ -4966,10 +6809,10 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
   }
   function setProgressBarRadius(px) {
     localStorage.setItem(PROGRESS_BAR_RADIUS_KEY, String(px));
-    applyCss3(px);
+    applyCss6(px);
   }
   function ensureProgressBarRadiusApplied() {
-    applyCss3(readNum(PROGRESS_BAR_RADIUS_KEY, PROGRESS_BAR_RADIUS_DEFAULT));
+    applyCss6(readNum(PROGRESS_BAR_RADIUS_KEY, PROGRESS_BAR_RADIUS_DEFAULT));
   }
 
   // src/settings/features/shareButtonTransition.ts
@@ -5010,32 +6853,36 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
 
   // src/settings/features/themedLyrics.ts
   var THEMED_LYRICS_KEY = "liquify-themed-lyrics";
-  var LYRICS_FONT_SIZE_KEY = "liquify-lyrics-font-size";
-  var LYRICS_FONT_SIZE_DEFAULT = 70;
+  var LYRICS_FONT_SIZE_KEY = "liquify-lyrics-font-size-pct";
+  var LYRICS_FONT_SIZE_DEFAULT = 130;
   var LYRICS_MARGIN_KEY = "liquify-lyrics-margin";
   var LYRICS_MARGIN_DEFAULT = 56;
-  function applyCss4() {
+  var LINE = ".mzAT53py1LJkDA4izCjN";
+  var ACTIVE_LINE = `${LINE}.N6tht_GLY5suoRAtaggy`;
+  var EMPTY_LINE = ".jfIYxRHLjghbwr41cXDo";
+  var LINES_ROOT = ".sVA57fPPVPMNO7STKL7s";
+  function applyCss7() {
     const themed = readLS(THEMED_LYRICS_KEY, "on") === "on";
     const size = readNum(LYRICS_FONT_SIZE_KEY, LYRICS_FONT_SIZE_DEFAULT);
     const margin = readNum(LYRICS_MARGIN_KEY, LYRICS_MARGIN_DEFAULT);
-    const css = themed ? `.lyrics-lyricsContent-lyric.lyrics-lyricsContent-active { font-size: ${size}px; }
-.lyrics-lyricsContent-lyric:not(.aLaX8poOH8kdbmGf) { margin-bottom: ${margin}px; }` : `.lyrics-lyricsContent-lyric:not(.aLaX8poOH8kdbmGf) { margin-bottom: .6em; }`;
+    const css = themed ? `${ACTIVE_LINE} { font-size: ${size}%; }
+${LINES_ROOT} ${LINE}:not(${EMPTY_LINE}) { margin-bottom: ${margin}px; }` : "";
     updateStyle("liquify-themed-lyrics", css);
   }
   function setThemedLyrics(on) {
     localStorage.setItem(THEMED_LYRICS_KEY, on ? "on" : "off");
-    applyCss4();
+    applyCss7();
   }
-  function setLyricsFontSize(px) {
-    localStorage.setItem(LYRICS_FONT_SIZE_KEY, String(px));
-    applyCss4();
+  function setLyricsFontSize(pct) {
+    localStorage.setItem(LYRICS_FONT_SIZE_KEY, String(pct));
+    applyCss7();
   }
   function setLyricsMargin(px) {
     localStorage.setItem(LYRICS_MARGIN_KEY, String(px));
-    applyCss4();
+    applyCss7();
   }
   function ensureThemedLyricsApplied() {
-    applyCss4();
+    applyCss7();
   }
 
   // src/settings/features/transparentControls.ts
@@ -5055,9 +6902,9 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
       transition: all 0.25s ease;
       opacity: ${opacity} !important;
     }
-    /* Hide the window-control overlay only while cinema view has its controls
-       hidden (normal cinema mode keeps them visible). */
-    .Root__top-container:has(.Root__cinema-view.Root__cinema-view--controls-hidden)::after {
+    /* Hide the window-control overlay only while the cinema view (.Gs2Ew\u2026) has
+       its controls hidden (.fQmiH\u2026); normal cinema mode keeps them visible. */
+    .Root__top-container:has(.Gs2EwEu259e_Q_vcVyCx.fQmiHA0AxpagJx4dPiuu)::after {
       opacity: 0 !important;
     }
     /* Fullscreen has no window buttons, so nothing needs reserving for them. */
@@ -5095,10 +6942,10 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
   }
 
   // src/settings/features/transparentPlayer.ts
-  var STYLE_ID7 = "liquify-transparent-player-style";
+  var STYLE_ID14 = "liquify-transparent-player-style";
   function updateTransparentPlayerCss(transparent) {
-    const css = transparent ? ".Root__now-playing-bar { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }" : "";
-    updateStyle(STYLE_ID7, css);
+    const css = transparent ? `${PLAYER_BAR} { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }` : "";
+    updateStyle(STYLE_ID14, css);
   }
   function applyTransparentPlayer(mode) {
     const m2 = mode === "on" ? "on" : "off";
@@ -5111,20 +6958,33 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
   }
 
   // src/settings/features/floatingPlayer.ts
-  var STYLE_ID8 = "liquify-floating-player-style";
+  var STYLE_ID15 = "liquify-floating-player-style";
   var FLOATING_PLAYER_KEY = "liquify-floating-player";
   function updateFloatingPlayerCss(on) {
     const css = on ? [
       // z-index: out of grid flow the bar's paint order would otherwise rest on
       // DOM order alone, leaving it at the mercy of whatever main-view stacks
       // over its strip. Pin it above the content it now floats on top of.
-      ".Root__now-playing-bar { position: absolute; bottom: 0px; justify-self: center; z-index: 5; }",
-      ".JlQyoTD6puMgqY_y,.main-yourLibraryX-libraryRootlist,.main-nowPlayingView-panel,.L1PjPOgsoqc2nbpl,.QbBd77Gr02YOoZzr,.YT5cYwULCoyD6pGh,.x-settings-container,.main-yourLibraryX-libraryRootlist.YPRhFiIfXdwCZJ9q,.OjXmN1Ml9AEI6JbR,.tsCJQaqF4ALEqTft,.marketplace-footer { padding-bottom: 7rem !important; }",
-      ".aotfMYhXr8Ag8I7a { padding-bottom: 6rem !important; }",
-      ".goTtSSnEdE9nZjky { padding-block-end: 7rem !important; }",
-      "span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverted-light-set.e-10451-legacy-button--medium { margin-bottom: 7rem !important; }"
+      //
+      // Spotify's own token, not a number: its scale puts the cinema view at 5
+      // while its controls are showing (the variable is literally named
+      // "above everything except now playing bar"), the bar at 6, and the
+      // cinema view at 7 once the controls are hidden. A hard-coded 5 here tied
+      // with the first of those and lost the tie, which is why the floating bar
+      // vanished behind cinema and fullscreen. At 6 it sits above cinema with
+      // the controls up, and still lets cinema cover it once they are hidden —
+      // which is the point of that mode.
+      // Out of flow, the bar's grid row (sized auto) collapses, so the main view
+      // and both sidebars run down behind it.
+      `${PLAYER_BAR} { position: absolute; bottom: 0px; justify-self: center; z-index: var(--now-playing-bar-grid-area-z-index, 6); }`,
+      // The scroll content of the library, the main view and the right sidebar,
+      // plus the settings and marketplace custom apps.
+      ".main-yourLibraryX-libraryRootlist,.main-view-container__scroll-node-child,.WosRx6NbfxOIFkdobeyk,.x-settings-container,.marketplace-footer { padding-bottom: 7rem !important; }",
+      // Version-agnostic: Encore's build hash moved from e-10451 to e-10810
+      // with the update, which left this one silently matching nothing.
+      'span.encore-inverted-light-set[class*="button-primary__inner"][class*="legacy-button--medium"] { margin-bottom: 7rem !important; }'
     ].join("\n") : "";
-    updateStyle(STYLE_ID8, css);
+    updateStyle(STYLE_ID15, css);
   }
   function applyFloatingPlayer(mode) {
     const m2 = mode === "on" ? "on" : "off";
@@ -5136,10 +6996,10 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
   }
 
   // src/settings/features/connectBar.ts
-  var STYLE_ID9 = "liquify-connect-bar-style";
+  var STYLE_ID16 = "liquify-connect-bar-style";
   var CONNECT_BAR_KEY = "liquify-connect-bar";
   function updateConnectBarCss(show) {
-    updateStyle(STYLE_ID9, show ? "" : ".main-connectBar-connectBar { display: none !important; }");
+    updateStyle(STYLE_ID16, show ? "" : ".main-connectBar-connectBar { display: none !important; }");
   }
   function applyConnectBar(mode) {
     const m2 = mode === "show" ? "show" : "hide";
@@ -5152,161 +7012,141 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
 
   // src/settings/features/uiEffects.ts
   var POPUP_BOUNCE_KEY = "liquify-popup-bounce";
+  var BOUNCE_CLASS = "liquify-popup-bounce";
+  function isPopupBounceOn() {
+    return (localStorage.getItem(POPUP_BOUNCE_KEY) || "on") === "on";
+  }
+  function syncClass() {
+    document.documentElement.classList.toggle(BOUNCE_CLASS, isPopupBounceOn());
+  }
   function applyPopupBounce(mode) {
     localStorage.setItem(POPUP_BOUNCE_KEY, mode);
+    syncClass();
     window.dispatchEvent(new Event("liquifyPopupBounceChange"));
   }
   function ensurePopupBounceApplied() {
+    syncClass();
     window.dispatchEvent(new Event("liquifyPopupBounceChange"));
   }
 
   // src/settings/features/visualizers.ts
+  var STYLE_ID17 = "liquify-visualizer-style";
+  var PLAYLIST_EQ = "img.YQ0uPtmHEvHsS8MszwpG";
+  var HOME_EQ = "img.Paf_Idn_uHcJizNgwOAs";
+  var HOME_SHORTCUT = ".x0Tk9K1tu0sFwdD5iNF5";
+  function ensureStyle2() {
+    if (document.getElementById(STYLE_ID17)) return;
+    const style = document.createElement("style");
+    style.id = STYLE_ID17;
+    style.textContent = `
+/* Rythora's equaliser: centre-anchored bars whose level swings between 30% and
+   full, each bar at its own fixed tempo and offset (BAR_TIMINGS). The level is a
+   registered property driving the height rather than a scaleY: a scale squashes
+   the rounded ends flat at low levels, the height keeps them round. */
+@property --liquify-eq-level {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 1;
+}
+@keyframes liquify-eq-pulse {
+  from { --liquify-eq-level: 0.3; }
+  to { --liquify-eq-level: 1; }
+}
+.custom-playing-bar,
+.home-visualizer-bar {
+  top: 50%;
+  translate: 0 -50%;
+  height: calc(var(--liquify-eq-full, 16px) * var(--liquify-eq-level));
+  animation: liquify-eq-pulse var(--liquify-eq-duration, 0.6s) ease-in-out var(--liquify-eq-delay, 0s) infinite alternate;
+}
+[role="row"]:hover [data-liquify-visualizer-wrapper],
+${HOME_SHORTCUT}:hover [data-liquify-home-visualizer] {
+  display: none;
+}
+/* Spotify's own animated equaliser image stays in the row; ours takes its place. */
+[data-liquify-visualizer-wrapper] ~ ${PLAYLIST_EQ} {
+  visibility: hidden;
+}`;
+    document.head.appendChild(style);
+  }
+  var BAR_TIMINGS = [
+    { duration: 0.56, delay: -0.42 },
+    { duration: 0.7, delay: -0.16 },
+    { duration: 0.5, delay: -0.55 },
+    { duration: 0.78, delay: -0.3 },
+    { duration: 0.61, delay: -0.62 }
+  ];
+  var BAR_COUNT = BAR_TIMINGS.length;
+  var BAR_WIDTH = 3.4;
+  var BAR_PITCH = 4.6;
+  function createBar(className, index, fullH) {
+    const bar = document.createElement("div");
+    bar.classList.add(className);
+    bar.style.position = "absolute";
+    bar.style.left = index * BAR_PITCH + "px";
+    bar.style.width = BAR_WIDTH + "px";
+    bar.style.borderRadius = BAR_WIDTH / 2 + "px";
+    bar.style.background = "currentColor";
+    const timing = BAR_TIMINGS[index];
+    bar.style.setProperty("--liquify-eq-full", `${fullH}px`);
+    bar.style.setProperty("--liquify-eq-duration", `${timing.duration}s`);
+    bar.style.setProperty("--liquify-eq-delay", `${timing.delay}s`);
+    return bar;
+  }
   function installPlaylistIndicatorVisualizer() {
     (async function() {
-      while (!Spicetify?.Player || !Spicetify?.Player?.data) await sleep2(300);
+      while (!Spicetify?.Player || !Spicetify?.Player?.data) await sleep(300);
+      ensureStyle2();
       let lastSvg = null;
       let lastIndicator = null;
-      function createBars(indicator) {
+      function removeBars() {
         if (lastSvg) {
           try {
             lastSvg.remove();
           } catch {
           }
-          lastSvg = null;
         }
+        lastSvg = null;
+        lastIndicator = null;
+      }
+      function createBars(indicator) {
+        removeBars();
         if (!indicator || !indicator.parentNode) return;
         const parent = indicator.parentNode;
-        const rectHeight = parent.offsetHeight || 20;
+        const cellHeight = parent.offsetHeight || 20;
+        const rectHeight = Math.max(20, cellHeight * 1.4);
         const wrapper = document.createElement("div");
         wrapper.style.position = "absolute";
         wrapper.style.left = "0px";
-        wrapper.style.top = "0px";
+        wrapper.style.top = (cellHeight - rectHeight) / 2 + "px";
         wrapper.style.width = "22px";
         wrapper.style.height = rectHeight + "px";
         wrapper.style.overflow = "hidden";
         wrapper.style.pointerEvents = "none";
         wrapper.style.color = "var(--spice-button-active, var(--spice-button, var(--spice-text, #1ed760)))";
         wrapper.dataset.liquifyVisualizerWrapper = "1";
-        const bars = [];
-        const speeds = [];
-        const phases = [];
         const fullH = Math.max(8, rectHeight * 0.8);
-        for (let i2 = 0; i2 < 4; i2++) {
-          const bar = document.createElement("div");
-          bar.classList.add("custom-playing-bar");
-          bar.style.position = "absolute";
-          bar.style.left = i2 * 6 + "px";
-          bar.style.width = "4px";
-          bar.style.height = fullH + "px";
-          bar.style.top = rectHeight / 2 - fullH / 2 + "px";
-          bar.style.borderRadius = "2px";
-          bar.style.background = "currentColor";
-          bar.style.willChange = "clip-path";
-          wrapper.appendChild(bar);
-          bars.push(bar);
-          speeds.push(7e-3 + Math.random() * 6e-3);
-          phases.push(Math.random() * Math.PI * 2);
-        }
+        for (let i2 = 0; i2 < BAR_COUNT; i2++) wrapper.appendChild(createBar("custom-playing-bar", i2, fullH));
         parent.insertBefore(wrapper, indicator);
         lastSvg = wrapper;
         lastIndicator = indicator;
-        let lastHeight = rectHeight;
-        const start2 = performance.now();
-        function animate() {
-          if (!lastSvg || !lastIndicator) return;
-          const parentNode = lastIndicator.parentNode;
-          if (!parentNode) {
-            try {
-              lastSvg.remove();
-            } catch {
-            }
-            lastSvg = null;
-            lastIndicator = null;
-            return;
-          }
-          const playButton = parentNode.querySelector?.(".main-trackList-rowImagePlayButton");
-          const isPlaying = Spicetify.Player.isPlaying() && (!playButton || window.getComputedStyle(playButton).opacity === "0");
-          if (!isPlaying) {
-            try {
-              lastSvg.remove();
-            } catch {
-            }
-            lastSvg = null;
-            lastIndicator = null;
-            return;
-          }
-          const now = performance.now();
-          const t = now - start2;
-          const currentRectHeight = parentNode.offsetHeight || rectHeight;
-          const maxHeight = Math.max(8, currentRectHeight * 0.8);
-          const minHeight = 4;
-          if (lastHeight !== currentRectHeight) {
-            lastSvg.style.height = currentRectHeight + "px";
-            const top = currentRectHeight / 2 - maxHeight / 2;
-            bars.forEach((bar) => {
-              bar.style.height = maxHeight + "px";
-              bar.style.top = top + "px";
-            });
-            lastHeight = currentRectHeight;
-          }
-          bars.forEach((bar, i2) => {
-            const height = minHeight + (Math.sin(t * speeds[i2] + phases[i2]) + 1) / 2 * (maxHeight - minHeight);
-            const inset = (maxHeight - height) / 2;
-            bar.style.clipPath = `inset(${inset}px 0 ${inset}px 0 round 2px)`;
-          });
-          requestAnimationFrame(animate);
-        }
-        requestAnimationFrame(animate);
       }
       async function updateIndicator() {
-        const indicator = document.querySelector(
-          ".POVCTaiu08g8SWXr, [data-playing-indicator]"
-        );
-        if (!indicator) {
-          if (lastSvg) {
-            try {
-              lastSvg.remove();
-            } catch {
-            }
-            lastSvg = null;
-            lastIndicator = null;
-          }
+        const indicator = document.querySelector(`${PLAYLIST_EQ}, [data-playing-indicator]`);
+        if (!indicator || !indicator.parentNode) {
+          removeBars();
           return false;
         }
-        if (!indicator.parentNode) {
-          if (lastSvg) {
-            try {
-              lastSvg.remove();
-            } catch {
-            }
-            lastSvg = null;
-            lastIndicator = null;
-          }
-          return false;
+        const isPlaying2 = Spicetify.Player.isPlaying();
+        if (!isPlaying2) {
+          removeBars();
+          return true;
         }
-        const parentNode = indicator.parentNode;
-        const playButton = parentNode.querySelector?.(".main-trackList-rowImagePlayButton");
-        const isPlaying = Spicetify.Player.isPlaying() && (!playButton || window.getComputedStyle(playButton).opacity === "0");
-        if (lastSvg && !isPlaying) {
-          try {
-            lastSvg.remove();
-          } catch {
-          }
-          lastSvg = null;
-          lastIndicator = null;
-        }
-        if (indicator !== lastIndicator) createBars(indicator);
+        if (indicator !== lastIndicator || !lastSvg?.isConnected) createBars(indicator);
         return true;
       }
       Spicetify.Player.addEventListener("songchange", () => {
-        if (lastSvg) {
-          try {
-            lastSvg.remove();
-          } catch {
-          }
-          lastSvg = null;
-          lastIndicator = null;
-        }
+        removeBars();
         void updateIndicator();
       });
       setInterval(() => void updateIndicator(), 100);
@@ -5314,6 +7154,7 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
   }
   function installHomeScreenVisualizer() {
     (function() {
+      ensureStyle2();
       const homeSvgs = /* @__PURE__ */ new Map();
       let wasPlaying = false;
       function createHomeVisualizer(img) {
@@ -5332,83 +7173,40 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
         wrapper.style.pointerEvents = "none";
         wrapper.style.color = "var(--spice-button-active, var(--spice-button, var(--spice-text, #1ed760)))";
         wrapper.style.flex = "0 0 auto";
-        const bars = [];
+        wrapper.dataset.liquifyHomeVisualizer = "1";
         const fullH = Math.max(8, imgHeight * 0.8);
-        for (let i2 = 0; i2 < 4; i2++) {
-          const bar = document.createElement("div");
-          bar.classList.add("home-visualizer-bar");
-          bar.style.position = "absolute";
-          bar.style.left = i2 * 6 + "px";
-          bar.style.width = "4px";
-          bar.style.height = fullH + "px";
-          bar.style.top = imgHeight / 2 - fullH / 2 + "px";
-          bar.style.borderRadius = "2px";
-          bar.style.background = "currentColor";
-          bar.style.willChange = "clip-path";
-          wrapper.appendChild(bar);
-          bars.push({
-            element: bar,
-            speed: 7e-3 + Math.random() * 6e-3,
-            phase: Math.random() * Math.PI * 2
-          });
-        }
+        for (let i2 = 0; i2 < BAR_COUNT; i2++) wrapper.appendChild(createBar("home-visualizer-bar", i2, fullH));
         parent.insertBefore(wrapper, img);
         img.style.visibility = "hidden";
         img.style.width = "0px";
         img.style.height = "0px";
         img.style.margin = "0";
         img.style.padding = "0";
-        homeSvgs.set(img, { wrapper, bars, img, parent, lastHeight: imgHeight });
+        homeSvgs.set(img, { wrapper });
       }
       function updateHomeScreenVisualizer() {
-        document.querySelectorAll("img.view-homeShortcutsGrid-equaliserImage").forEach((img) => {
+        for (const [img, data] of homeSvgs) {
+          if (!data.wrapper.isConnected) homeSvgs.delete(img);
+        }
+        document.querySelectorAll(HOME_EQ).forEach((img) => {
           const im = img;
           if (!homeSvgs.has(im)) createHomeVisualizer(im);
         });
       }
-      const homeObserver = new MutationObserver(() => updateHomeScreenVisualizer());
+      let queued = false;
+      const homeObserver = new MutationObserver(() => {
+        if (queued) return;
+        queued = true;
+        requestAnimationFrame(() => {
+          queued = false;
+          updateHomeScreenVisualizer();
+        });
+      });
       homeObserver.observe(document.body, { childList: true, subtree: true });
-      const start2 = performance.now();
-      function animate() {
-        const t = performance.now() - start2;
-        for (const [img, data] of homeSvgs.entries()) {
-          if (!document.body.contains(data.wrapper)) {
-            homeSvgs.delete(img);
-            continue;
-          }
-          const imgEl = data.img;
-          const pH = data.parent.offsetHeight || 0;
-          const rectHeight = pH >= 16 ? pH : data.lastHeight || 24;
-          const maxHeight = Math.max(8, rectHeight * 0.8);
-          const minHeight = 4;
-          if (data.lastHeight !== rectHeight) {
-            data.wrapper.style.height = rectHeight + "px";
-            const top = rectHeight / 2 - maxHeight / 2;
-            data.bars.forEach((barData) => {
-              barData.element.style.height = maxHeight + "px";
-              barData.element.style.top = top + "px";
-            });
-            data.lastHeight = rectHeight;
-          }
-          const shortcut = data.wrapper.closest?.(".view-homeShortcutsGrid-shortcut");
-          try {
-            data.wrapper.style.display = shortcut && shortcut.matches?.(":hover") ? "none" : "block";
-          } catch {
-            data.wrapper.style.display = "block";
-          }
-          data.bars.forEach((barData) => {
-            const height = minHeight + (Math.sin(t * barData.speed + barData.phase) + 1) / 2 * (maxHeight - minHeight);
-            const inset = (maxHeight - height) / 2;
-            barData.element.style.clipPath = `inset(${inset}px 0 ${inset}px 0 round 2px)`;
-          });
-        }
-        requestAnimationFrame(animate);
-      }
-      animate();
       updateHomeScreenVisualizer();
       Spicetify.Player.addEventListener("onplaypause", () => {
-        const isPlaying = Spicetify.Player.isPlaying();
-        if (wasPlaying && !isPlaying) {
+        const isPlaying2 = Spicetify.Player.isPlaying();
+        if (wasPlaying && !isPlaying2) {
           for (const [, data] of homeSvgs.entries()) {
             try {
               data.wrapper?.remove();
@@ -5417,10 +7215,10 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
           }
           homeSvgs.clear();
         }
-        if (!wasPlaying && isPlaying) {
+        if (!wasPlaying && isPlaying2) {
           updateHomeScreenVisualizer();
         }
-        wasPlaying = isPlaying;
+        wasPlaying = isPlaying2;
       });
     })();
   }
@@ -5670,6 +7468,8 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
   };
 
   // src/settings/components/settingsStyles.tsx
+  var ROW_HEIGHT = 52;
+  var OVERSCAN = 6;
   function openExternalLink(url) {
     if (!url) return;
     try {
@@ -5780,7 +7580,16 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
     }
     .liquifyHeaderActionBtn:hover { background: var(--accent-color) !important; }
     .liquifyHeaderActionBtn svg { width: 16px; height: 16px; display: block; }
-    .liquifyCloseBtn { font-size: 18px; }
+    /* Stroked rather than filled, matching the drawn close glyph below. */
+    .liquifyCloseBtn svg {
+      width: 18px;
+      height: 18px;
+      display: block;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+    }
     .liquifySettingsBody {
       flex: 1 1 auto;
       overflow-x: hidden;
@@ -5857,9 +7666,21 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
       color: white;
       background: transparent;
       box-shadow: var(--liquify-shadow);
-      font-size: 22px;
       line-height: 1;
       transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1), box-shadow 0.28s ease, background-color 0.2s ease;
+    }
+    /* Drawn rather than the \u2039 \u203A characters: at this size the glyphs render thin
+       and sit off-centre, since their metrics depend on whichever font Spotify
+       has loaded. */
+    .liquifySectionNavScrollBtn svg {
+      display: block;
+      width: 14px;
+      height: 14px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2.4;
+      stroke-linecap: round;
+      stroke-linejoin: round;
     }
     .liquifySectionNavScrollBtn:hover { transform: scale(1.08); background: var(--liquify-glow-accent); }
     .liquifySectionNavScrollBtn:active { transform: scale(0.95); }
@@ -5927,7 +7748,9 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
       justify-content: space-between;
       gap: 10px;
       white-space: nowrap;
+      transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1), box-shadow 0.28s ease;
     }
+    .liquifySelectBtn:active { transform: scale(0.9); }
     .liquifySelectLabel { overflow: hidden; text-overflow: ellipsis; }
     .liquifySelectChevron { width: 14px; height: 14px; flex: 0 0 14px; position: relative; }
     .liquifySelectChevron::before {
@@ -5976,6 +7799,276 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
       background: var(--liquify-glow-accent);
       box-shadow: var(--liquify-shadow);
       transform: scale(1.02);
+    }
+    /* The current entry is bold *and* filled, so it reads as chosen at a glance
+       instead of only on close inspection. */
+    .liquifySelectItem.isSelected {
+      font-weight: 700;
+      background: var(--liquify-glow-accent);
+      box-shadow: var(--liquify-shadow);
+    }
+
+    /* The same spring popupBounce.ts plays on Spotify's own menus, as a plain
+       animation: these menus are React portals that mount and unmount on the
+       spot, so there is no class for that module's enter/exit to hang off. Only
+       the entrance \u2014 an exit would need the element kept alive past its unmount,
+       which is the clone dance popupBounce has to do for Spotify's menus. */
+    @keyframes liquifyMenuPop {
+      from { opacity: 0; transform: translateY(-6px) scale(0.86); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    /* The exit keeps its own, sharper curve \u2014 the same split popupBounce uses
+       between arriving and leaving. */
+    @keyframes liquifyMenuPopOut {
+      from { opacity: 1; transform: translateY(0) scale(1); }
+      to { opacity: 0; transform: translateY(8px) scale(0.95); }
+    }
+    /* Gated on the Popup Bounce toggle, which uiEffects.ts mirrors onto <html> \u2014
+       one switch for these and for the menus popupBounce.ts animates. */
+    html.liquify-popup-bounce .liquifySelectMenu,
+    html.liquify-popup-bounce .liquifyPopover,
+    html.liquify-popup-bounce .liquifyLibrary {
+      transform-origin: top center;
+      animation: liquifyMenuPop 240ms cubic-bezier(0.34, 1.7, 0.64, 1) both;
+    }
+    html.liquify-popup-bounce .liquifySelectMenu.isClosing,
+    html.liquify-popup-bounce .liquifyPopover.isClosing,
+    html.liquify-popup-bounce .liquifyLibrary.isClosing {
+      animation: liquifyMenuPopOut 180ms cubic-bezier(0.8, 0, 0.2, 1) both;
+      pointer-events: none;
+    }
+
+    /* ---- Font picker ---- */
+    .liquifyFontMenu {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 8px;
+      overflow: hidden;
+    }
+    /* Search and filter share one row; the field takes whatever the dropdown
+       leaves. min-width:0 so it may actually shrink instead of forcing the row
+       wider than the menu. */
+    .liquifyFontTop {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .liquifyFontSearch {
+      flex: 1 1 auto;
+      min-width: 0;
+      padding: 7px 10px;
+      font-size: 12px;
+      outline: none;
+    }
+    .liquifyFontSearch::placeholder { color: rgba(255, 255, 255, 0.5); }
+    .liquifyFontTop .liquifySelectBtn { flex: 0 0 auto; }
+    .liquifyFontList {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      /* Explicit, because overflow-y alone makes the other axis scrollable too \u2014
+         which is what put a horizontal scrollbar under the list. */
+      overflow-x: clip;
+      position: relative;
+      /* The room the hover scale grows into. Clipping happens at this padding
+         edge, so the inset is what keeps a scaled row from being cut off left
+         and right \u2014 and overflow-x above is what stops it scrolling instead. */
+      padding: 4px 10px;
+    }
+    /* Holds the full scroll height while only the visible rows exist inside it. */
+    .liquifyFontRunway { position: relative; }
+    .liquifyFontItem {
+      position: absolute;
+      left: 0;
+      right: 0;
+      /* Must match ROW_HEIGHT in the picker: rows are placed by arithmetic, not
+         measured, so a mismatch here shows up as drift down the list. The 4px
+         is the gap, taken out of the row's own box. */
+      height: 48px;
+      margin-bottom: 4px;
+      box-sizing: border-box;
+      padding: 6px 10px;
+      border-radius: 10px;
+      cursor: pointer;
+      user-select: none;
+      text-align: left;
+      overflow: hidden;
+      /* Every row carries the rim, not just the one under the pointer. */
+      box-shadow: var(--liquify-shadow);
+      transition: background-color 0.25s ease, transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1);
+    }
+    .liquifyFontItem:hover { transform: scale(1.02); }
+    /* The current one keeps the rim and adds the accent fill, so it stays
+       distinct from whatever the pointer happens to be over. Never bolded \u2014 the
+       name is already set in its own face, and forcing a weight would
+       misrepresent the very thing being chosen. */
+    .liquifyFontItem.isSelected { background: var(--liquify-glow-accent); }
+    /* !important and at class specificity, so a chosen body font \u2014 which sets
+       its own !important rule over the whole app \u2014 cannot repaint the previews
+       in itself. The variable is set per row. */
+    .liquifyFontName,
+    .liquifyFontPreview {
+      font-family: var(--liquify-preview-font) !important;
+    }
+    .liquifyFontName { font-size: 13px; font-weight: 700; line-height: 1.3; }
+    .liquifyFontPreview {
+      font-size: 12px;
+      opacity: 0.66;
+      line-height: 1.3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .liquifyFontEmpty { padding: 10px; font-size: 12px; opacity: 0.6; text-align: center; }
+    /* Same height as a real row, so nothing shifts when they are replaced. */
+    .liquifyFontSkeleton { pointer-events: none; opacity: 0.35; }
+
+    /* ---- Background image library ---- */
+    /* A click-catcher, and nothing more. It used to dim the page, which is what
+       made the panel read as a black box: backdrop-filter samples whatever is
+       painted behind the element, so a dark sheet directly underneath is all
+       the glass had left to refract. Transparent, the real UI is the backdrop
+       and the panel is glass like every other surface. */
+    .liquifyLibraryScrim {
+      position: fixed;
+      inset: 0;
+      /* Above .liquifySectionNavScrollBtn (1000002), which is portalled to
+         <body> for the panel behind and would otherwise sit on top of the
+         pictures \u2014 glass and all. Hidden outright below, but the ordering
+         matters for anything else in that band. */
+      z-index: 1000003;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    /* The settings panel's carousel arrows belong to the panel, not to this. */
+    html.liquify-library-open .liquifySectionNavScrollBtn { display: none; }
+    .liquifyLibrary {
+      --glass-filter: url(#glass-filter--r1-7);
+      /* Wide enough for three tiles at their minimum, two on a small window. */
+      width: min(820px, calc(100vw - 60px));
+      max-height: min(640px, calc(100vh - 80px));
+      display: flex;
+      flex-direction: column;
+      border-radius: 17px;
+      overflow: hidden;
+      background: transparent;
+      /* Darkened to match the settings panel and its dropdowns \u2014 over a bright
+         wallpaper the glass alone leaves the text washed out. */
+      backdrop-filter: var(--glass-filter) blur(5px) brightness(0.8);
+      -webkit-backdrop-filter: var(--glass-filter) blur(5px) brightness(0.8);
+      box-shadow: var(--liquify-shadow);
+      color: white;
+    }
+    .liquifyLibraryHead {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+    }
+    .liquifyLibraryTitle { font-size: 14px; font-weight: 700; flex: 1 1 auto; }
+    .liquifyLibraryGrid {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: clip;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 12px;
+      align-items: start;
+      /* Room for the hover scale to grow into without being clipped. */
+      padding: 4px 12px 14px;
+    }
+    .liquifyLibraryTile {
+      position: relative;
+      /* 16:9 as a percentage of the tile's own width, and deliberately not
+         aspect-ratio. On a grid item that ratio has to be transferred into the
+         row's size, and here it was not: the rows came out shorter than the
+         tiles standing in them, so the pictures overlapped once there were
+         enough to need a second row. A percentage padding resolves against the
+         inline size, which the column track has already made definite, so the
+         height is settled before rows are sized at all. height:0 keeps the
+         content box empty, and also stops any stretch from applying. */
+      height: 0;
+      padding-top: 56.25%;
+      border-radius: 12px;
+      overflow: hidden;
+      cursor: pointer;
+      box-shadow: var(--liquify-shadow);
+      background: rgba(255, 255, 255, 0.05);
+      transition: transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1);
+    }
+    /* Driven by the same hover state as the remove button rather than by
+       :hover \u2014 the button is portalled out of the tile, so the pointer moving
+       onto it counts as leaving, and the picture would drop its scale just as
+       you reach for the X. */
+    .liquifyLibraryTile.isHovered { transform: scale(1.02); }
+    /* Absolute, because the tile's height is all padding \u2014 inset resolves
+       against the padding box, so this fills it. */
+    .liquifyLibraryTile img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    /* The chosen picture gets the accent as a ring drawn inside its own box, so
+       the frame does not shift the tile or fight the rounded corners. */
+    .liquifyLibraryTile.isSelected::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      box-shadow: inset 0 0 0 3px var(--liquify-glow-accent), var(--liquify-shadow);
+    }
+    /* Portalled beside the panel and laid over the tile by coordinates \u2014 the
+       same trick the dropdown menus use, and here it is what makes the glass
+       work at all. Nested in the tile it had nothing to refract: the panel's
+       own backdrop-filter makes it a backdrop root, and the tile's hover scale
+       composites its subtree, so the button sampled an empty layer and came out
+       flat. Out here its backdrop is the page, cover and all. */
+    .liquifyLibraryDelete {
+      position: fixed;
+      z-index: 1000004;
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      border-radius: 9px;
+      cursor: pointer;
+      color: white;
+      background: transparent;
+      /* Blur and brightness only, no refraction: at 28px the lens distortion
+         has nothing to bend and only muddies the X. The brightness lifts the
+         button off dark artwork, which is most of it. */
+      backdrop-filter: blur(6px) brightness(1.35);
+      -webkit-backdrop-filter: blur(6px) brightness(1.35);
+      box-shadow: var(--liquify-shadow);
+      transition: background-color 0.2s ease,
+                  transform 0.28s cubic-bezier(0.3, 2.25, 0.32, 1);
+      animation: liquifyLibraryDeleteIn 160ms cubic-bezier(0.34, 1.7, 0.64, 1) both;
+    }
+    @keyframes liquifyLibraryDeleteIn {
+      from { opacity: 0; transform: scale(0.7); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    /* Tinted rather than filled, so the glass survives the hover. */
+    .liquifyLibraryDelete:hover { background: rgba(220, 60, 60, 0.45); }
+    .liquifyLibraryDelete:active { transform: scale(0.86); }
+    .liquifyLibraryDelete svg { width: 13px; height: 13px; }
+    .liquifyLibraryEmpty {
+      grid-column: 1 / -1;
+      padding: 30px 10px;
+      font-size: 12px;
+      opacity: 0.6;
+      text-align: center;
     }
 
     .liquifyPopover {
@@ -6310,9 +8403,9 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
         translate var(--transition) var(--ease),
         scale var(--transition) var(--ease);
       z-index: 3;
-      /* The knob body is OUR glass: theme.ts attaches a GlassSurface to
-         ".liquid-toggle .indicator__liquid", so .liquify-glass--svg paints the
-         backdrop refraction here while the background stays transparent. The
+      /* The knob body is OUR glass: theme.ts lists
+         ".liquid-toggle .indicator__liquid" as a glass target, so its
+         backdrop-filter paints the refraction here while the background stays transparent. The
          box-shadow only adds the glass rim/depth \u2014 the lens itself is the
          backdrop-filter, not these shadows. */
       overflow: hidden;
@@ -6460,6 +8553,31 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
   `;
     document.head.appendChild(style);
   }
+  var MENU_EXIT_MS = 180;
+  function useMenuExit(open, setOpen) {
+    const [closing, setClosing] = React.useState(false);
+    const timer = React.useRef(0);
+    React.useEffect(() => () => window.clearTimeout(timer.current), []);
+    const requestClose = React.useCallback(() => {
+      if (!open || closing) return;
+      if (!isPopupBounceOn()) {
+        setOpen(false);
+        return;
+      }
+      setClosing(true);
+      window.clearTimeout(timer.current);
+      timer.current = window.setTimeout(() => {
+        setClosing(false);
+        setOpen(false);
+      }, MENU_EXIT_MS);
+    }, [open, closing, setOpen]);
+    React.useEffect(() => {
+      if (open) return;
+      window.clearTimeout(timer.current);
+      setClosing(false);
+    }, [open]);
+    return { closing, requestClose };
+  }
   function useOutsideClick(open, onClose, refs) {
     React.useEffect(() => {
       if (!open) return;
@@ -6596,13 +8714,353 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
       /* @__PURE__ */ React.createElement("span", { className: "liquifyInline" }, /* @__PURE__ */ React.createElement("span", { className: "liquifyColorSwatch", style: { background: normalized } }), normalized)
     ), popover && (ReactDOM?.createPortal ? ReactDOM.createPortal(popover, document.body) : popover));
   }
+  function FontPicker(props) {
+    const btnRef = React.useRef(null);
+    const menuRef = React.useRef(null);
+    const [open, setOpen] = React.useState(false);
+    const [pos, setPos] = React.useState(null);
+    const [query, setQuery] = React.useState("");
+    const [category, setCategory] = React.useState("all");
+    const [ready, setReady] = React.useState(false);
+    const [scrollTop, setScrollTop] = React.useState(0);
+    const [viewportHeight, setViewportHeight] = React.useState(240);
+    const listRef = React.useRef(null);
+    const catalogue = FONTS;
+    const useLayout = React.useLayoutEffect || React.useEffect;
+    const nestedMenus = {
+      current: {
+        contains: (node) => Array.from(document.querySelectorAll(".liquifySelectMenu")).some(
+          (m2) => m2 !== menuRef.current && m2.contains(node)
+        )
+      }
+    };
+    const { closing, requestClose } = useMenuExit(open, setOpen);
+    useOutsideClick(open, requestClose, [btnRef, menuRef, nestedMenus]);
+    React.useEffect(() => {
+      if (!open) {
+        setReady(false);
+        return;
+      }
+      const id = requestAnimationFrame(() => {
+        setReady(true);
+        const el = listRef.current;
+        if (!el) return;
+        const height = el.clientHeight;
+        setViewportHeight(height);
+        const index = rows.findIndex((f2) => f2.family === props.value);
+        const top = index > 0 ? Math.max(0, index * ROW_HEIGHT - height / 2 + ROW_HEIGHT / 2) : 0;
+        el.scrollTop = top;
+        setScrollTop(top);
+      });
+      return () => cancelAnimationFrame(id);
+    }, [open]);
+    useLayout(() => {
+      if (!open) return;
+      const body = btnRef.current?.closest?.(".liquifySettingsPanel")?.querySelector?.(".liquifySettingsBody");
+      if (!body) return;
+      body.classList.add("isDropdownOpen");
+      return () => {
+        body.classList.remove("isDropdownOpen");
+      };
+    }, [open]);
+    useLayout(() => {
+      if (!open) {
+        setPos(null);
+        return;
+      }
+      const recalc = () => {
+        const btn = btnRef.current;
+        if (!btn) return;
+        const r = btn.getBoundingClientRect();
+        const panel = btn.closest?.(".liquifySettingsPanel");
+        const body = panel?.querySelector?.(".liquifySettingsBody") ?? null;
+        const bounds = body?.getBoundingClientRect ? body.getBoundingClientRect() : { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+        const inView = r.bottom > bounds.top + 4 && r.top < bounds.bottom - 4;
+        if (!inView) {
+          setPos(null);
+          setOpen(false);
+          return;
+        }
+        const width = Math.min(300, Math.max(0, bounds.right - bounds.left - 16));
+        const top = r.bottom + 6;
+        let left = r.right - width;
+        left = Math.min(Math.max(left, bounds.left + 8), bounds.right - width - 8);
+        const maxHeight = Math.max(180, Math.min(320, bounds.bottom - top - 8));
+        setPos({ left, top, width, maxHeight });
+      };
+      recalc();
+      window.addEventListener("resize", recalc);
+      window.addEventListener("scroll", recalc, true);
+      return () => {
+        window.removeEventListener("resize", recalc);
+        window.removeEventListener("scroll", recalc, true);
+      };
+    }, [open]);
+    const needle = query.trim().toLowerCase();
+    const shown = catalogue.filter(
+      (f2) => (category === "all" || f2.category === category) && (!needle || f2.family.toLowerCase().includes(needle))
+    );
+    const rows = [{ family: FONT_DEFAULT, category: "" }, ...shown];
+    const first = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+    const last = Math.min(rows.length, Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN);
+    const windowRows = rows.slice(first, last);
+    React.useEffect(() => {
+      setScrollTop(0);
+      if (listRef.current) listRef.current.scrollTop = 0;
+    }, [query, category]);
+    React.useEffect(() => {
+      if (open && ready) loadFontPreviews(windowRows.map((f2) => f2.family));
+    }, [open, ready, first, last, query, category]);
+    const onListScroll = (e) => {
+      const el = e.currentTarget;
+      setScrollTop(el.scrollTop);
+      if (el.clientHeight !== viewportHeight) setViewportHeight(el.clientHeight);
+    };
+    const pick = (family) => {
+      requestClose();
+      props.onChange(family);
+    };
+    const menu = open && pos ? /* @__PURE__ */ React.createElement(
+      "div",
+      {
+        ref: menuRef,
+        className: `liquifySelectMenu liquifyFontMenu${closing ? " isClosing" : ""}`,
+        style: { left: `${pos.left}px`, top: `${pos.top}px`, width: `${pos.width}px`, maxHeight: `${pos.maxHeight}px` }
+      },
+      /* @__PURE__ */ React.createElement("div", { className: "liquifyFontTop" }, /* @__PURE__ */ React.createElement(
+        "input",
+        {
+          type: "text",
+          className: "liquifyControlSurface liquifyFontSearch",
+          placeholder: "Search fonts...",
+          value: query,
+          autoFocus: true,
+          onChange: (e) => setQuery(e.target.value)
+        }
+      ), /* @__PURE__ */ React.createElement(
+        Select,
+        {
+          value: category,
+          onChange: setCategory,
+          options: [
+            { value: "all", label: "All" },
+            ...FONT_CATEGORIES.map((c2) => ({
+              value: c2,
+              label: c2.charAt(0).toUpperCase() + c2.slice(1)
+            }))
+          ]
+        }
+      )),
+      /* @__PURE__ */ React.createElement("div", { className: "liquifyFontList", ref: listRef, onScroll: onListScroll }, !ready && Array.from({ length: 6 }).map((_2, i2) => /* @__PURE__ */ React.createElement("div", { className: "liquifyFontItem liquifyFontSkeleton", style: { top: i2 * ROW_HEIGHT }, key: `skeleton-${i2}` }, /* @__PURE__ */ React.createElement("div", { className: "liquifyFontName" }, "\xA0"), /* @__PURE__ */ React.createElement("div", { className: "liquifyFontPreview" }, "\xA0"))), ready && // Full height for the scrollbar to work against, with only the
+      // window's rows inside it, each placed at its own offset.
+      /* @__PURE__ */ React.createElement("div", { className: "liquifyFontRunway", style: { height: `${rows.length * ROW_HEIGHT}px` } }, windowRows.map((f2, i2) => {
+        const isDefault = f2.family === FONT_DEFAULT;
+        return /* @__PURE__ */ React.createElement(
+          "div",
+          {
+            key: f2.family,
+            className: `liquifyFontItem${props.value === f2.family ? " isSelected" : ""}`,
+            style: {
+              top: `${(first + i2) * ROW_HEIGHT}px`,
+              ["--liquify-preview-font"]: isDefault ? SPOTIFY_STACK : `"${f2.family}"`
+            },
+            onClick: () => pick(f2.family)
+          },
+          /* @__PURE__ */ React.createElement("div", { className: "liquifyFontName" }, isDefault ? "Spotify default" : f2.family),
+          /* @__PURE__ */ React.createElement("div", { className: "liquifyFontPreview" }, "The quick brown fox")
+        );
+      })), ready && shown.length === 0 && /* @__PURE__ */ React.createElement("div", { className: "liquifyFontEmpty" }, "No fonts found"))
+    ) : null;
+    return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        ref: btnRef,
+        type: "button",
+        className: `liquifyControlSurface liquifySelectBtn${open && !closing ? " isOpen" : ""}`,
+        onClick: () => {
+          if (open) {
+            requestClose();
+            return;
+          }
+          setPos(null);
+          setOpen(true);
+        }
+      },
+      /* @__PURE__ */ React.createElement("span", { className: "liquifySelectLabel" }, props.value === FONT_DEFAULT ? "Spotify default" : props.value),
+      /* @__PURE__ */ React.createElement("span", { className: "liquifySelectChevron", "aria-hidden": "true" })
+    ), menu && (ReactDOM?.createPortal ? ReactDOM.createPortal(menu, document.body) : menu));
+  }
+  function BackgroundLibrary(props) {
+    const [items, setItems] = React.useState([]);
+    const [selected, setSelected] = React.useState(
+      () => localStorage.getItem(LIBRARY_SELECTED_KEY) || ""
+    );
+    const fileRef = React.useRef(null);
+    const cardRef = React.useRef(null);
+    const gridRef = React.useRef(null);
+    const [hover, setHover] = React.useState(null);
+    const hoverRef = React.useRef("");
+    hoverRef.current = hover?.id || "";
+    const { closing, requestClose } = useMenuExit(props.open, (v2) => {
+      if (!v2) props.onClose();
+    });
+    const reload = React.useCallback(() => {
+      void listImages().then(setItems);
+    }, []);
+    React.useEffect(() => {
+      if (props.open) reload();
+    }, [props.open, reload]);
+    const urls = React.useMemo(
+      () => items.map((item) => URL.createObjectURL(item.blob)),
+      [items]
+    );
+    React.useEffect(
+      () => () => {
+        for (const url of urls) URL.revokeObjectURL(url);
+      },
+      [urls]
+    );
+    React.useEffect(() => {
+      if (!props.open) return;
+      const onKey = (ev) => {
+        if (ev.key === "Escape") {
+          ev.stopPropagation();
+          requestClose();
+        }
+      };
+      document.addEventListener("keydown", onKey, true);
+      return () => document.removeEventListener("keydown", onKey, true);
+    }, [props.open, requestClose]);
+    React.useEffect(() => {
+      if (!props.open) return;
+      let frame = 0;
+      const onMove = (ev) => {
+        if (frame) return;
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          const grid = gridRef.current;
+          if (!grid) return;
+          const inside = (r) => ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
+          if (!inside(grid.getBoundingClientRect())) {
+            setHover(null);
+            return;
+          }
+          const tiles = Array.from(grid.querySelectorAll(".liquifyLibraryTile"));
+          const current = tiles.filter((el) => el.dataset.id === hoverRef.current);
+          for (const el of [...current, ...tiles]) {
+            const r = el.getBoundingClientRect();
+            if (!inside(r)) continue;
+            setHover({ id: el.dataset.id, top: r.top, right: r.right });
+            return;
+          }
+          setHover(null);
+        });
+      };
+      document.addEventListener("mousemove", onMove);
+      return () => {
+        document.removeEventListener("mousemove", onMove);
+        cancelAnimationFrame(frame);
+      };
+    }, [props.open]);
+    React.useEffect(() => {
+      if (props.open) return;
+      setHover(null);
+    }, [props.open]);
+    React.useEffect(() => {
+      const on = props.open || closing;
+      document.documentElement.classList.toggle("liquify-library-open", on);
+      return () => document.documentElement.classList.remove("liquify-library-open");
+    }, [props.open, closing]);
+    if (!props.open && !closing) return null;
+    const choose = (id) => {
+      setSelected(id);
+      selectImage(id);
+    };
+    const modal = /* @__PURE__ */ React.createElement(
+      "div",
+      {
+        className: "liquifyLibraryScrim",
+        onMouseDown: (e) => {
+          if (!cardRef.current?.contains(e.target)) requestClose();
+        }
+      },
+      /* @__PURE__ */ React.createElement("div", { className: `liquifyLibrary${closing ? " isClosing" : ""}`, ref: cardRef }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLibraryHead" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLibraryTitle" }, props.labels.title), /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          type: "button",
+          className: "liquifyControlSurface liquifyActionBtn",
+          onClick: () => fileRef.current?.click()
+        },
+        props.labels.add
+      ), /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          type: "button",
+          className: "liquifyControlSurface liquifyHeaderActionBtn liquifyCloseBtn",
+          "aria-label": props.labels.close,
+          onClick: requestClose
+        },
+        /* @__PURE__ */ React.createElement("svg", { viewBox: "0 0 24 24", "aria-hidden": "true" }, /* @__PURE__ */ React.createElement("path", { d: "M5 5 19 19" }), /* @__PURE__ */ React.createElement("path", { d: "M19 5 5 19" }))
+      ), /* @__PURE__ */ React.createElement(
+        "input",
+        {
+          ref: fileRef,
+          type: "file",
+          accept: "image/*",
+          multiple: true,
+          style: { display: "none" },
+          onChange: async (e) => {
+            const input = e.target;
+            const files = Array.from(input.files || []);
+            if (!files.length) return;
+            await addImages(files);
+            input.value = "";
+            const next = await listImages();
+            setItems(next);
+            if (!localStorage.getItem(LIBRARY_SELECTED_KEY) && next[0]) choose(next[0].id);
+          }
+        }
+      )), /* @__PURE__ */ React.createElement("div", { className: "liquifyLibraryGrid", ref: gridRef, onScroll: () => setHover(null) }, items.length === 0 && /* @__PURE__ */ React.createElement("div", { className: "liquifyLibraryEmpty" }, props.labels.empty), items.map((item, i2) => /* @__PURE__ */ React.createElement(
+        "div",
+        {
+          key: item.id,
+          "data-id": item.id,
+          className: "liquifyLibraryTile" + (item.id === selected ? " isSelected" : "") + (item.id === hover?.id ? " isHovered" : ""),
+          title: item.name,
+          onClick: () => choose(item.id)
+        },
+        /* @__PURE__ */ React.createElement("img", { src: urls[i2], alt: item.name })
+      ))))
+    );
+    const removeButton = hover && /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        type: "button",
+        className: "liquifyLibraryDelete",
+        "aria-label": props.labels.remove,
+        style: { top: `${hover.top + 7}px`, left: `${hover.right - 35}px` },
+        onClick: async (e) => {
+          e.stopPropagation();
+          const id = hover.id;
+          setHover(null);
+          await deleteImage(id);
+          if (id === selected) setSelected(localStorage.getItem(LIBRARY_SELECTED_KEY) || "");
+          reload();
+        }
+      },
+      /* @__PURE__ */ React.createElement("svg", { viewBox: "0 0 24 24", "aria-hidden": "true", fill: "none", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round" }, /* @__PURE__ */ React.createElement("path", { d: "M5 5 19 19" }), /* @__PURE__ */ React.createElement("path", { d: "M19 5 5 19" }))
+    );
+    const tree = /* @__PURE__ */ React.createElement(React.Fragment, null, modal, removeButton);
+    return ReactDOM?.createPortal ? ReactDOM.createPortal(tree, document.body) : tree;
+  }
   function Select(props) {
     const btnRef = React.useRef(null);
     const menuRef = React.useRef(null);
     const [open, setOpen] = React.useState(false);
     const [pos, setPos] = React.useState(null);
     const useLayout = React.useLayoutEffect || React.useEffect;
-    useOutsideClick(open, () => setOpen(false), [btnRef, menuRef]);
+    const { closing, requestClose } = useMenuExit(open, setOpen);
+    useOutsideClick(open, requestClose, [btnRef, menuRef]);
     useLayout(() => {
       if (!open) return;
       const body = btnRef.current?.closest?.(".liquifySettingsPanel")?.querySelector?.(".liquifySettingsBody");
@@ -6676,7 +9134,7 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
       "div",
       {
         ref: menuRef,
-        className: "liquifySelectMenu",
+        className: `liquifySelectMenu${closing ? " isClosing" : ""}`,
         style: {
           left: `${pos.left}px`,
           top: `${pos.top}px`,
@@ -6690,9 +9148,9 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
         "div",
         {
           key: o.value,
-          className: "liquifySelectItem",
+          className: `liquifySelectItem${o.value === props.value ? " isSelected" : ""}`,
           onClick: () => {
-            setOpen(false);
+            requestClose();
             props.onChange(o.value);
           }
         },
@@ -6704,10 +9162,14 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
       {
         ref: btnRef,
         type: "button",
-        className: `liquifyControlSurface liquifySelectBtn${open ? " isOpen" : ""}`,
+        className: `liquifyControlSurface liquifySelectBtn${open && !closing ? " isOpen" : ""}`,
         onClick: () => {
+          if (open) {
+            requestClose();
+            return;
+          }
           setPos(null);
-          setOpen((v2) => !v2);
+          setOpen(true);
         }
       },
       /* @__PURE__ */ React.createElement("span", { className: "liquifySelectLabel" }, current?.label ?? props.value),
@@ -7103,14 +9565,26 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
   var COLOR_SCHEMES = [
     { value: "mocha", label: "Mocha" },
     { value: "macchiato", label: "Macchiato" },
-    { value: "frappe", label: "Frappe" },
+    { value: "frappe", label: "Frappé" },
     { value: "latte", label: "Latte" }
   ];
   var COLOR_PALETTES = {
-    mocha: { text: "CDD6F4", subtext: "A6ADC8", main: "1E1E2E", sidebar: "181825", player: "181825", card: "313244", shadow: "11111B", highlight: "45475A", "highlight-elevated": "45475A", "main-elevated": "313244", "selected-row": "585B70", button: "CBA6F7", "button-active": "A6E3A1", "button-disabled": "45475A", "tab-active": "313244", notification: "CBA6F7", "notification-error": "F38BA8", misc: "9399B2" },
-    macchiato: { text: "CAD3F5", subtext: "A5ADCB", main: "24273A", sidebar: "1E2030", player: "1E2030", card: "363A4F", shadow: "181926", highlight: "494D64", "highlight-elevated": "494D64", "main-elevated": "363A4F", "selected-row": "5B6078", button: "C6A0F6", "button-active": "A6DA95", "button-disabled": "494D64", "tab-active": "363A4F", notification: "C6A0F6", "notification-error": "ED8796", misc: "939AB7" },
-    frappe: { text: "C6D0F5", subtext: "A5ADCE", main: "303446", sidebar: "292C3C", player: "292C3C", card: "414559", shadow: "232634", highlight: "51576D", "highlight-elevated": "51576D", "main-elevated": "414559", "selected-row": "626880", button: "CA9EE6", "button-active": "A6D189", "button-disabled": "51576D", "tab-active": "414559", notification: "CA9EE6", "notification-error": "E78284", misc: "949CBB" },
-    latte: { text: "4C4F69", subtext: "6C6F85", main: "EFF1F5", sidebar: "E6E9EF", player: "E6E9EF", card: "CCD0DA", shadow: "DCE0E8", highlight: "BCC0CC", "highlight-elevated": "BCC0CC", "main-elevated": "CCD0DA", "selected-row": "ACB0BE", button: "8839EF", "button-active": "40A02B", "button-disabled": "BCC0CC", "tab-active": "CCD0DA", notification: "8839EF", "notification-error": "D20F39", misc: "7C7F93" }
+    mocha: {
+      text: "CDD6F4", subtext: "A6ADC8", main: "1E1E2E", sidebar: "181825", player: "181825", card: "313244", shadow: "11111B", highlight: "45475A", "highlight-elevated": "45475A", "main-elevated": "313244", "selected-row": "585B70", button: "CBA6F7", "button-active": "A6E3A1", "button-disabled": "45475A", "tab-active": "313244", notification: "CBA6F7", "notification-error": "F38BA8", equalizer: "CBA6F7", misc: "9399B2",
+      rosewater: "F5E0DC", flamingo: "F2CDCD", pink: "F5C2E7", mauve: "CBA6F7", red: "F38BA8", maroon: "EBA0AC", peach: "FAB387", yellow: "F9E2AF", green: "A6E3A1", teal: "94E2D5", sky: "89DCEB", sapphire: "74C7EC", blue: "89B4FA", lavender: "B4BEFE", subtext1: "BAC2DE", subtext0: "A6ADC8", overlay2: "9399B2", overlay1: "7F849C", overlay0: "6C7086", surface2: "585B70", surface1: "45475A", surface0: "313244", base: "1E1E2E", mantle: "181825", crust: "11111B"
+    },
+    macchiato: {
+      text: "CAD3F5", subtext: "A5ADCB", main: "24273A", sidebar: "1E2030", player: "1E2030", card: "363A4F", shadow: "181926", highlight: "494D64", "highlight-elevated": "494D64", "main-elevated": "363A4F", "selected-row": "5B6078", button: "C6A0F6", "button-active": "A6DA95", "button-disabled": "494D64", "tab-active": "363A4F", notification: "C6A0F6", "notification-error": "ED8796", equalizer: "C6A0F6", misc: "939AB7",
+      rosewater: "F4DBD6", flamingo: "F0C6C6", pink: "F5BDE6", mauve: "C6A0F6", red: "ED8796", maroon: "EE99A0", peach: "F5A97F", yellow: "EED49F", green: "A6DA95", teal: "8BD5CA", sky: "91D7E3", sapphire: "7DC4E4", blue: "8AADF4", lavender: "B7BDF8", subtext1: "B8C0E0", subtext0: "A5ADCB", overlay2: "939AB7", overlay1: "8087A2", overlay0: "6E738D", surface2: "5B6078", surface1: "494D64", surface0: "363A4F", base: "24273A", mantle: "1E2030", crust: "181926"
+    },
+    frappe: {
+      text: "C6D0F5", subtext: "A5ADCE", main: "303446", sidebar: "292C3C", player: "292C3C", card: "414559", shadow: "232634", highlight: "51576D", "highlight-elevated": "51576D", "main-elevated": "414559", "selected-row": "626880", button: "CA9EE6", "button-active": "A6D189", "button-disabled": "51576D", "tab-active": "414559", notification: "CA9EE6", "notification-error": "E78284", equalizer: "CA9EE6", misc: "949CBB",
+      rosewater: "F2D5CF", flamingo: "EEBEBE", pink: "F4B8E4", mauve: "CA9EE6", red: "E78284", maroon: "EA999C", peach: "EF9F76", yellow: "E5C890", green: "A6D189", teal: "81C8BE", sky: "99D1DB", sapphire: "85C1DC", blue: "8CAAEE", lavender: "BABBF1", subtext1: "B5BFE2", subtext0: "A5ADCE", overlay2: "949CBB", overlay1: "838BA7", overlay0: "737994", surface2: "626880", surface1: "51576D", surface0: "414559", base: "303446", mantle: "292C3C", crust: "232634"
+    },
+    latte: {
+      text: "4C4F69", subtext: "6C6F85", main: "EFF1F5", sidebar: "E6E9EF", player: "E6E9EF", card: "CCD0DA", shadow: "DCE0E8", highlight: "BCC0CC", "highlight-elevated": "BCC0CC", "main-elevated": "CCD0DA", "selected-row": "ACB0BE", button: "8839EF", "button-active": "40A02B", "button-disabled": "BCC0CC", "tab-active": "CCD0DA", notification: "8839EF", "notification-error": "D20F39", equalizer: "8839EF", misc: "7C7F93",
+      rosewater: "DC8A78", flamingo: "DD7878", pink: "EA76CB", mauve: "8839EF", red: "D20F39", maroon: "E64553", peach: "FE640B", yellow: "DF8E1D", green: "40A02B", teal: "179299", sky: "04A5E5", sapphire: "209FB5", blue: "1E66F5", lavender: "7287FD", subtext1: "5C5F77", subtext0: "6C6F85", overlay2: "7C7F93", overlay1: "8C8FA1", overlay0: "9CA0B0", surface2: "ACB0BE", surface1: "BCC0CC", surface0: "CCD0DA", base: "EFF1F5", mantle: "E6E9EF", crust: "DCE0E8"
+    }
   };
   function applyColorScheme(scheme) {
     if (!COLOR_PALETTES[scheme]) scheme = "mocha";
@@ -7119,18 +9593,21 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
     root.dataset.liquifyFlavor = scheme;
     for (const [key, value] of Object.entries(COLOR_PALETTES[scheme])) root.style.setProperty(`--spice-${key}`, `#${value}`);
     window.dispatchEvent(new Event("liquifyColorSchemeChange"));
+    try {
+      resetDynamicAccentCache?.();
+      applySavedAccentSettings?.();
+    } catch {
+    }
   }
   function ensureColorSchemeApplied() {
     const saved = localStorage.getItem(COLOR_SCHEME_KEY);
     if (saved && COLOR_SCHEMES.some((s2) => s2.value === saved)) {
       try {
-        document.documentElement.dataset.liquifyFlavor = saved;
+        applyColorScheme(saved);
       } catch {
       }
       return saved;
     }
-    /* No explicit choice yet — detect the active scheme from the injected
-       --spice-main background so the menu defaults to what's really applied. */
     try {
       const bg = getComputedStyle(document.documentElement).getPropertyValue("--spice-main").trim().toUpperCase();
       const known = {
@@ -7151,7 +9628,8 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
     return "mocha";
   }
   var PLAIN_KEYS = [
-    "liquify-color-scheme",
+    COLOR_SCHEME_KEY,
+    "liquify-language",
     "liquify-accent-mode",
     "liquify-accent-source",
     "liquify-custom-color",
@@ -7164,6 +9642,7 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
     "liquify-bg-blur",
     "liquify-bg-brightness",
     "liquify-bg-url",
+    "liquify-hires-cover",
     "liquify-artist-bg-mode",
     "liquify-artist-bg-url",
     "liquify-artist-scroll-blur",
@@ -7176,7 +9655,8 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
     "liquify-action-bar-box-mode",
     "liquify-transparent-player",
     "liquify-compact-player",
-    "liquify-lyrics-mode"
+    "liquify-lyrics-mode",
+    "liquify-glass-enabled"
   ];
   var CONFIG_KEYS = [
     ...PLAIN_KEYS,
@@ -7215,7 +9695,18 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
     CCA_MARGIN_BOTTOM_KEY,
     CCA_MARGIN_LEFT_KEY,
     PLAYBAR_COVER_BORDER_RADIUS_KEY,
-    PLAYER_ICONS_KEY
+    PLAYER_ICONS_KEY,
+    ...Object.values(SIDEBARS).flatMap((spec) => [spec.key, spec.amountKey]),
+    LOCAL_FILES_TRANSPARENT_KEY,
+    FONT_BODY_KEY,
+    FONT_HEADING_KEY,
+    VINYL_SPEED_KEY,
+    ...Object.values(VINYL_SURFACES).map((spec) => spec.key),
+    BG_ENGINE_KEY,
+    ...Object.values(KAWARP_KEYS),
+    // liquify-bg-blur / -brightness are already in PLAIN_KEYS; the set below adds
+    // the per-engine values without having to repeat them by hand.
+    ...Object.values(BG_SURFACES).flatMap((spec) => [spec.blurKey, spec.brightnessKey])
   ];
   var CONFIG_KEY_SET = new Set(CONFIG_KEYS);
   function collectSettings() {
@@ -7292,6 +9783,8 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
       window.dispatchEvent(new Event("liquifyLyricsModeChange"));
     };
     const t = getTranslation();
+    const [languageMode, setLanguageModeState] = React.useState(getLanguageMode());
+    const languageCode = getEffectiveLanguage();
     const tips = t.tooltips || {};
     const sub = t.subSections || {};
     const [searchQuery, setSearchQuery] = React.useState("");
@@ -7302,7 +9795,11 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
     const [sectionNavControlsReady, setSectionNavControlsReady] = React.useState(false);
     const useLayout = React.useLayoutEffect || React.useEffect;
     const jumpToSection = (id) => {
-      document.getElementById("liquify-sec-" + id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      const target = document.getElementById("liquify-sec-" + id);
+      const body = target?.closest(".liquifySettingsBody");
+      if (!target || !body) return;
+      const top = body.scrollTop + target.getBoundingClientRect().top - body.getBoundingClientRect().top;
+      body.scrollTo({ top, behavior: "smooth" });
     };
     const updateSectionNavScroll = () => {
       const nav = sectionNavRef.current;
@@ -7422,7 +9919,7 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
             if (e.key === "Enter" || e.key === " ") scrollSectionNav(-1);
           }
         },
-        "\u2039"
+        /* @__PURE__ */ React.createElement("svg", { viewBox: "0 0 24 24", "aria-hidden": "true" }, /* @__PURE__ */ React.createElement("path", { d: "M15 5 8 12l7 7" }))
       ),
       document.body
     ), sectionNavScroll.right && ReactDOM.createPortal(
@@ -7439,12 +9936,12 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
             if (e.key === "Enter" || e.key === " ") scrollSectionNav(1);
           }
         },
-        "\u203A"
+        /* @__PURE__ */ React.createElement("svg", { viewBox: "0 0 24 24", "aria-hidden": "true" }, /* @__PURE__ */ React.createElement("path", { d: "M9 5l7 7-7 7" }))
       ),
       document.body
     )) : null;
-    const [accentMode, setAccentMode] = React.useState(readLS("liquify-accent-mode", "dynamic"));
     const [scheme, setScheme] = React.useState(localStorage.getItem(COLOR_SCHEME_KEY) || "mocha");
+    const [accentMode, setAccentMode] = React.useState(readLS("liquify-accent-mode", "dynamic"));
     const [accentSource, setAccentSource] = React.useState(readLS("liquify-accent-source", "background"));
     const [accentColor, setAccentColor] = React.useState(readLS("liquify-custom-color", "#1DB954"));
     const [accentSatBoost, setAccentSatBoost] = React.useState(readNum("liquify-accent-sat-boost", 17));
@@ -7453,6 +9950,50 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
     const [glowColor, setGlowColor] = React.useState(readLS("liquify-glow-color", "#1DB954"));
     const [bgMode, setBgMode] = React.useState(readLS("liquify-bg-mode", "dynamic"));
     const [bgCustomAnimated, setBgCustomAnimated] = React.useState(readLS("liquify-bg-custom-animated", "off"));
+    const [hiResCover, setHiResCoverState] = React.useState(() => isHiResCoverOn());
+    const [kawarp, setKawarpState] = React.useState(() => {
+      const initial = {};
+      for (const key of Object.keys(KAWARP_KEYS)) {
+        initial[key] = readNum(KAWARP_KEYS[key], KAWARP_DEFAULTS[key]);
+      }
+      return initial;
+    });
+    const applyKawarp = (key, value) => {
+      setKawarpState((prev) => ({ ...prev, [key]: value }));
+      setKawarpValue(key, value);
+    };
+    const animatedActive = bgMode === "animated" || bgCustomAnimated === "on" && (bgMode === "custom" || bgMode === "url" || bgMode === "playlist");
+    const [bgAppearance, setBgAppearance] = React.useState(readAllBackgroundAppearance);
+    const [bgEngine, setBgEngineState] = React.useState(getBgEngine());
+    const bgSurface = !animatedActive ? "static" : bgEngine === "tiles" ? "tiles" : "kawarp";
+    const [sidebarBlur, setSidebarBlurState] = React.useState(() => {
+      const initial = {};
+      for (const side of Object.keys(SIDEBARS)) {
+        initial[side] = { on: isSidebarBlurOn(side), amount: readSidebarBlurAmount(side) };
+      }
+      return initial;
+    });
+    const applySidebarBlur = (side, patch) => {
+      setSidebarBlurState((prev) => ({
+        ...prev,
+        [side]: { ...prev[side], ...patch }
+      }));
+      if (patch.on !== void 0) setSidebarBlur(side, patch.on ? "on" : "off");
+      if (patch.amount !== void 0) setSidebarBlurAmount(side, patch.amount);
+    };
+    const [localFilesTransparent, setLocalFilesTransparentState] = React.useState(readLS(LOCAL_FILES_TRANSPARENT_KEY, "off"));
+    const [vinyl, setVinylState] = React.useState(() => {
+      const initial = {};
+      for (const surface of Object.keys(VINYL_SURFACES)) initial[surface] = isVinylOn(surface);
+      return initial;
+    });
+    const [vinylSpeed, setVinylSpeedState] = React.useState(readNum(VINYL_SPEED_KEY, VINYL_SPEED_DEFAULT));
+    const [bodyFont, setBodyFontState] = React.useState(readLS(FONT_BODY_KEY, FONT_DEFAULT));
+    const [headingFont, setHeadingFontState] = React.useState(readLS(FONT_HEADING_KEY, FONT_DEFAULT));
+    const applyVinyl = (surface, on) => {
+      setVinylState((prev) => ({ ...prev, [surface]: on }));
+      setVinyl(surface, on ? "on" : "off");
+    };
     const [artistBgMode, setArtistBgMode] = React.useState(readLS("liquify-artist-bg-mode", "theme"));
     const [playerWidthMode, setPlayerWidthMode] = React.useState(readLS("liquify-player-width", "default"));
     const [playerCustomW, setPlayerCustomW] = React.useState(readNum("liquify-player-custom-width", DEFAULT_CUSTOM_WIDTH));
@@ -7468,8 +10009,6 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
     const [progressBarRadius, setProgressBarRadiusState] = React.useState(readNum(PROGRESS_BAR_RADIUS_KEY, PROGRESS_BAR_RADIUS_DEFAULT));
     const [progressBarCompat, setProgressBarCompatState] = React.useState(readLS(PROGRESS_BAR_COMPAT_KEY, "off") === "on");
     const [playerRadius, setPlayerRadiusState] = React.useState(readNum("liquify-player-radius", 30));
-    const [bgBlur, setBgBlurState] = React.useState(readNum("liquify-bg-blur", 7));
-    const [bgBrightness, setBgBrightnessState] = React.useState(readNum("liquify-bg-brightness", 45));
     const [bgUrl, setBgUrl] = React.useState(readLS("liquify-bg-url", ""));
     const [artistBgUrl, setArtistBgUrl] = React.useState(readLS("liquify-artist-bg-url", ""));
     const [artistScrollBlur, setArtistScrollBlur] = React.useState(readNum("liquify-artist-scroll-blur", 15));
@@ -7499,9 +10038,9 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
     const [npvcBlur, setNpvcBlur] = React.useState(readNum(NPVC_BLUR_KEY, NPVC_DEFAULTS.blur));
     const [popupBounceMode, setPopupBounceMode] = React.useState(readLS(POPUP_BOUNCE_KEY, "on"));
     const [homeLayout, setHomeLayout] = React.useState(readLS(HOME_LAYOUT_KEY, "on"));
-    const [performanceMode, setPerformanceMode] = React.useState(false);
-    const [glassBlur, setGlassBlurState] = React.useState(GLASS_BLUR_DEFAULT);
-    const [backdropBlur, setBackdropBlurState] = React.useState(BACKDROP_BLUR_DEFAULT);
+    const [performanceMode, setPerformanceMode] = React.useState(!isGlassEnabled());
+    const [glassBlur, setGlassBlurState] = React.useState(readNum(GLASS_BLUR_KEY, GLASS_BLUR_DEFAULT));
+    const [backdropBlur, setBackdropBlurState] = React.useState(readNum(BACKDROP_BLUR_KEY, BACKDROP_BLUR_DEFAULT));
     const [navRadius, setNavRadiusState] = React.useState(readNum(NAV_RADIUS_KEY, LAYOUT_RADIUS_DEFAULTS.nav));
     const [mainRadius, setMainRadiusState] = React.useState(readNum(MAIN_RADIUS_KEY, LAYOUT_RADIUS_DEFAULTS.main));
     const [rightRadius, setRightRadiusState] = React.useState(readNum(RIGHT_RADIUS_KEY, LAYOUT_RADIUS_DEFAULTS.right));
@@ -7510,8 +10049,8 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
     const [configDirty, setConfigDirty] = React.useState(false);
     const configFingerprint = React.useRef(settingsFingerprint());
     const unixLike = isUnixLikeOS();
-    const bgFileRef = React.useRef(null);
     const artistFileRef = React.useRef(null);
+    const [libraryOpen, setLibraryOpen] = React.useState(false);
     const cfg = t.config || {};
     const handleConfigCopy = async () => {
       try {
@@ -7593,13 +10132,7 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
     const applyBgMode = async (mode) => {
       setBgMode(mode);
       localStorage.setItem("liquify-bg-mode", mode);
-      if (mode === "custom") {
-        const saved = localStorage.getItem("liquify-bg-image");
-        if (!saved) {
-          bgFileRef.current?.click();
-          return;
-        }
-      }
+      if (mode === "custom" && !getLibraryUrl()) setLibraryOpen(true);
       if (mode === "url") {
         const saved = localStorage.getItem("liquify-bg-url");
         if (!saved) return;
@@ -7644,14 +10177,30 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
       setActionBarBox(mode);
       applyActionBarBox(mode);
     };
-    const applyBlur = (value) => {
-      setBgBlurState(value);
-      applyBackgroundBlur(value);
+    const applyAppearance = (surface, field, value) => {
+      setBgAppearance((prev) => ({
+        ...prev,
+        [surface]: { ...prev[surface], [field]: value }
+      }));
+      setBackgroundAppearance(surface, field, value);
     };
-    const applyBgBrightness = (value) => {
-      setBgBrightnessState(value);
-      applyBackgroundBrightness(value);
-    };
+    const appearanceRows = /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.backgroundBlur), /* @__PURE__ */ React.createElement(
+      Stepper,
+      {
+        value: bgAppearance[bgSurface].blur,
+        min: 0,
+        max: BG_BLUR_RANGE[bgSurface],
+        onChange: (v2) => applyAppearance(bgSurface, "blur", v2)
+      }
+    )), /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.backgroundBrightness || "Background Brightness:"), /* @__PURE__ */ React.createElement(
+      Stepper,
+      {
+        value: bgAppearance[bgSurface].brightness,
+        min: 0,
+        max: 200,
+        onChange: (v2) => applyAppearance(bgSurface, "brightness", v2)
+      }
+    )));
     const applyArtistBlur = (value) => {
       setArtistScrollBlur(value);
       applyArtistScrollEffect(value, artistScrollBrightness);
@@ -7685,17 +10234,16 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
       setGlowColor("#1DB954");
       resetGlowAccentToDefault();
       localStorage.setItem("liquify-bg-mode", "dynamic");
-      localStorage.setItem("liquify-bg-blur", "7");
-      localStorage.setItem("liquify-bg-brightness", "45");
       localStorage.removeItem("liquify-bg-url");
       localStorage.setItem("liquify-bg-custom-animated", "off");
       setBgCustomAnimated("off");
+      resetKawarpDefaults();
+      setKawarpState({ ...KAWARP_DEFAULTS });
+      resetBackgroundAppearance();
+      setBgAppearance(readAllBackgroundAppearance());
+      setBgEngineState("kawarp");
       setBgMode("dynamic");
-      setBgBlurState(7);
-      setBgBrightnessState(45);
       setBgUrl("");
-      applyBackgroundBlur(7);
-      applyBackgroundBrightness(45);
       window.dispatchEvent(new Event("liquifyBackgroundChange"));
       localStorage.setItem("liquify-artist-bg-mode", "theme");
       localStorage.setItem("liquify-artist-scroll-blur", "15");
@@ -7815,6 +10363,19 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
       setMainRadius(LAYOUT_RADIUS_DEFAULTS.main);
       setRightRadiusState(LAYOUT_RADIUS_DEFAULTS.right);
       setRightRadius(LAYOUT_RADIUS_DEFAULTS.right);
+      resetFonts();
+      setBodyFontState(FONT_DEFAULT);
+      setHeadingFontState(FONT_DEFAULT);
+      resetVinyl();
+      setVinylState({ npv: false, playbar: false, cinema: false });
+      setVinylSpeedState(VINYL_SPEED_DEFAULT);
+      resetSidebarBlur();
+      setSidebarBlurState({
+        left: { on: false, amount: SIDEBAR_BLUR_DEFAULT },
+        right: { on: false, amount: SIDEBAR_BLUR_DEFAULT }
+      });
+      setLocalFilesTransparentState("off");
+      setLocalFilesTransparent("off");
     };
     return /* @__PURE__ */ React.createElement("div", { className: "liquifySettingsPanel" }, /* @__PURE__ */ React.createElement("div", { className: "liquifySettingsHeader" }, /* @__PURE__ */ React.createElement("h3", { className: "liquifySettingsTitle" }, t.title), /* @__PURE__ */ React.createElement("div", { className: "liquifyHeaderActions" }, /* @__PURE__ */ React.createElement(ButtonTooltip, { text: "Discord" }, /* @__PURE__ */ React.createElement(
       "button",
@@ -7842,7 +10403,7 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
         "aria-label": t.close || "Close",
         onClick: props.onClose
       },
-      "\xD7"
+      /* @__PURE__ */ React.createElement("svg", { viewBox: "0 0 24 24", "aria-hidden": "true" }, /* @__PURE__ */ React.createElement("path", { d: "M5 5 19 19" }), /* @__PURE__ */ React.createElement("path", { d: "M19 5 5 19" }))
     )))), /* @__PURE__ */ React.createElement("div", { className: "liquifySearchIsland" }, /* @__PURE__ */ React.createElement(
       "input",
       {
@@ -7854,12 +10415,17 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
         spellCheck: false
       }
     ), /* @__PURE__ */ React.createElement("div", { className: "liquifySectionNavWrap" }, /* @__PURE__ */ React.createElement("div", { className: "liquifySectionNav", ref: sectionNavRef }, [
+      { id: "language", title: titles.language || "Language" },
       { id: "accent", title: titles.accent },
       { id: "background", title: titles.background },
       { id: "artist", title: titles.artist },
       { id: "ui", title: titles.ui || "UI" },
       { id: "player", title: titles.player },
+      { id: "nextSongCard", title: titles.nextSongCard || "Next Song Card" },
+      { id: "canvasCoverArt", title: titles.canvasCoverArt || "Canvas Cover Art" },
+      { id: "playlist", title: titles.playlist },
       { id: "lyrics", title: titles.lyrics || "Lyrics" },
+      { id: "transparent", title: titles.transparent },
       { id: "config", title: titles.config || "Config" }
     ].map((s2) => /* @__PURE__ */ React.createElement(
       "button",
@@ -7870,7 +10436,31 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
         onClick: () => jumpToSection(s2.id)
       },
       s2.title
-    ))))), sectionNavScrollControls, /* @__PURE__ */ React.createElement("div", { className: "liquifySettingsBody", ref: bodyRef }, /* @__PURE__ */ React.createElement(Section, { id: "liquify-sec-accent", title: titles.accent }, /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, "Color Scheme", /* @__PURE__ */ React.createElement(HelpTip, { text: "Switch between the Catppuccin flavors. Applies after a reload." })), /* @__PURE__ */ React.createElement(
+    ))))), sectionNavScrollControls, /* @__PURE__ */ React.createElement("div", { className: "liquifySettingsBody", ref: bodyRef }, /* @__PURE__ */ React.createElement(Section, { id: "liquify-sec-language", title: titles.language || "Language" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.language || "Language:", /* @__PURE__ */ React.createElement(HelpTip, { text: tips.language })), /* @__PURE__ */ React.createElement(
+      Select,
+      {
+        value: languageMode === "auto" ? "auto" : "custom",
+        options: [
+          { value: "auto", label: t.languageOptions?.auto || "Follow Spotify" },
+          { value: "custom", label: t.dropdown.custom }
+        ],
+        onChange: (v2) => {
+          const next = v2 === "auto" ? "auto" : languageCode;
+          setLanguageModeState(next);
+          setLanguage(next);
+        }
+      }
+    )), languageMode !== "auto" && /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.languageChoice || "Language:"), /* @__PURE__ */ React.createElement(
+      Select,
+      {
+        value: languageMode,
+        options: getAvailableLanguages(),
+        onChange: (v2) => {
+          setLanguageModeState(v2);
+          setLanguage(v2);
+        }
+      }
+    ))), /* @__PURE__ */ React.createElement(Section, { id: "liquify-sec-accent", title: titles.accent }, /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, "Color Scheme", /* @__PURE__ */ React.createElement(HelpTip, { text: "Switch between the Catppuccin flavors." })), /* @__PURE__ */ React.createElement(
       Select,
       {
         value: scheme,
@@ -7932,28 +10522,15 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
         ],
         onChange: (m2) => void applyBgMode(m2)
       }
-    ), bgMode === "custom" && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(
+    ), bgMode === "custom" && /* @__PURE__ */ React.createElement(
       "button",
       {
         type: "button",
         className: "liquifyControlSurface liquifyActionBtn",
-        onClick: () => bgFileRef.current?.click()
+        onClick: () => setLibraryOpen(true)
       },
-      chooseFileLabel
-    ), /* @__PURE__ */ React.createElement(
-      "input",
-      {
-        ref: bgFileRef,
-        type: "file",
-        accept: "image/*",
-        style: { display: "none" },
-        onChange: async (e) => {
-          const file = e.target.files?.[0];
-          if (!file) return;
-          await applyCustomBackground(file);
-        }
-      }
-    )), bgMode === "url" && /* @__PURE__ */ React.createElement(
+      t.openLibrary || "Image Library"
+    ), bgMode === "url" && /* @__PURE__ */ React.createElement(
       "input",
       {
         type: "text",
@@ -7967,7 +10544,16 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
           if (val) updateBackground();
         }
       }
-    ))), (bgMode === "custom" || bgMode === "url" || bgMode === "playlist") && /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.animatedBackground || "Animated Background:", /* @__PURE__ */ React.createElement(HelpTip, { text: tips.animatedBackground })), /* @__PURE__ */ React.createElement(
+    ))), /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.hiResCover || "Use hi-res pictures:", /* @__PURE__ */ React.createElement(HelpTip, { text: tips.hiResCover })), /* @__PURE__ */ React.createElement(
+      Toggle,
+      {
+        checked: hiResCover,
+        onChange: (checked) => {
+          setHiResCoverState(checked);
+          setHiResCover(checked);
+        }
+      }
+    )), (bgMode === "custom" || bgMode === "url" || bgMode === "playlist") && /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.animatedBackground || "Animated Background:", /* @__PURE__ */ React.createElement(HelpTip, { text: tips.animatedBackground })), /* @__PURE__ */ React.createElement(
       Toggle,
       {
         checked: bgCustomAnimated === "on",
@@ -7978,7 +10564,41 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
           window.dispatchEvent(new Event("liquifyBackgroundChange"));
         }
       }
-    )), /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.backgroundBlur), /* @__PURE__ */ React.createElement(Stepper, { value: bgBlur, min: 0, max: 100, onChange: applyBlur })), /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.backgroundBrightness || "Background Brightness:"), /* @__PURE__ */ React.createElement(Stepper, { value: bgBrightness, min: 0, max: 200, onChange: applyBgBrightness }))), /* @__PURE__ */ React.createElement(Section, { id: "liquify-sec-artist", title: titles.artist }, /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.apbackground, /* @__PURE__ */ React.createElement(HelpTip, { text: tips.artistBackground })), /* @__PURE__ */ React.createElement("div", { className: "liquifyStackedControls" }, /* @__PURE__ */ React.createElement(
+    )), !animatedActive && appearanceRows, animatedActive && /* @__PURE__ */ React.createElement(SubSection, { title: sub.kawarp || "Animated Background" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.animatedEngine || "Engine:"), /* @__PURE__ */ React.createElement(
+      Select,
+      {
+        value: bgEngine,
+        onChange: (v2) => {
+          setBgEngineState(v2);
+          setBgEngine(v2);
+        },
+        options: [
+          { value: "kawarp", label: t.dropdown.engineKawarp || "Kawarp (WebGL)" },
+          { value: "tiles", label: t.dropdown.engineTiles || "Classic" }
+        ]
+      }
+    )), appearanceRows, bgEngine === "kawarp" && Object.keys(KAWARP_RANGES).map((key) => /* @__PURE__ */ React.createElement("div", { className: "liquifyRow", key }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, (t.kawarp || {})[key] || key), /* @__PURE__ */ React.createElement(
+      Stepper,
+      {
+        value: kawarp[key],
+        min: KAWARP_RANGES[key].min,
+        max: KAWARP_RANGES[key].max,
+        onChange: (v2) => applyKawarp(key, v2)
+      }
+    )))), /* @__PURE__ */ React.createElement(
+      BackgroundLibrary,
+      {
+        open: libraryOpen,
+        onClose: () => setLibraryOpen(false),
+        labels: {
+          title: t.imageLibrary || "Image Library",
+          add: t.addImages || "Add images",
+          empty: t.libraryEmpty || "No images yet. Add some to get started.",
+          remove: t.removeImage || "Remove",
+          close: t.close || "Close"
+        }
+      }
+    )), /* @__PURE__ */ React.createElement(Section, { id: "liquify-sec-artist", title: titles.artist }, /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.apbackground, /* @__PURE__ */ React.createElement(HelpTip, { text: tips.artistBackground })), /* @__PURE__ */ React.createElement("div", { className: "liquifyStackedControls" }, /* @__PURE__ */ React.createElement(
       Select,
       {
         value: artistBgMode,
@@ -8026,7 +10646,22 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
           if (val) props.artistCtrl?.setMode?.("url");
         }
       }
-    ))), /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.artistScrollBlur, /* @__PURE__ */ React.createElement(HelpTip, { text: tips.artistScrollBlur })), /* @__PURE__ */ React.createElement(Stepper, { value: artistScrollBlur, min: 0, max: 100, onChange: applyArtistBlur })), /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.artistScrollBrightness, /* @__PURE__ */ React.createElement(HelpTip, { text: tips.artistScrollBrightness })), /* @__PURE__ */ React.createElement(Stepper, { value: artistScrollBrightness, min: 0, max: 200, onChange: applyArtistBrightness }))), /* @__PURE__ */ React.createElement(Section, { id: "liquify-sec-ui", title: titles.ui || "UI" }, /* @__PURE__ */ React.createElement(SubSection, { title: sub.animations || "Animations" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.ui?.popupBounce || "Popup Bounce:", /* @__PURE__ */ React.createElement(HelpTip, { text: tips.popupBounce })), /* @__PURE__ */ React.createElement(
+    ))), /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.artistScrollBlur, /* @__PURE__ */ React.createElement(HelpTip, { text: tips.artistScrollBlur })), /* @__PURE__ */ React.createElement(Stepper, { value: artistScrollBlur, min: 0, max: 100, onChange: applyArtistBlur })), /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.artistScrollBrightness, /* @__PURE__ */ React.createElement(HelpTip, { text: tips.artistScrollBrightness })), /* @__PURE__ */ React.createElement(Stepper, { value: artistScrollBrightness, min: 0, max: 200, onChange: applyArtistBrightness }))), /* @__PURE__ */ React.createElement(Section, { id: "liquify-sec-ui", title: titles.ui || "UI" }, /* @__PURE__ */ React.createElement(SubSection, { title: sub.performanceGlass || "Performance & Glass" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.ui?.performanceMode || "Performance Mode:", /* @__PURE__ */ React.createElement(HelpTip, { text: tips.performanceMode })), /* @__PURE__ */ React.createElement(
+      Toggle,
+      {
+        checked: performanceMode,
+        onChange: (checked) => {
+          setPerformanceMode(checked);
+          setGlassEnabled(!checked);
+        }
+      }
+    )), performanceMode ? /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.ui?.backdropBlur || "Backdrop Blur (px):"), /* @__PURE__ */ React.createElement(Stepper, { value: backdropBlur, min: 0, max: 80, onChange: (v2) => {
+      setBackdropBlurState(v2);
+      setBackdropBlur(v2);
+    } })) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.ui?.glassBlur || "Glass Blur (px):", /* @__PURE__ */ React.createElement(HelpTip, { text: tips.glassBlur })), /* @__PURE__ */ React.createElement(Stepper, { value: glassBlur, min: 0, max: 30, onChange: (v2) => {
+      setGlassBlurState(v2);
+      setGlassBlur(v2);
+    } })))), /* @__PURE__ */ React.createElement(SubSection, { title: sub.animations || "Animations" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.ui?.popupBounce || "Popup Bounce:", /* @__PURE__ */ React.createElement(HelpTip, { text: tips.popupBounce })), /* @__PURE__ */ React.createElement(
       Toggle,
       {
         checked: popupBounceMode === "on",
@@ -8055,7 +10690,54 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
     } })), /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.ui?.rightSidebarRadius || "Right Sidebar Border Radius:"), /* @__PURE__ */ React.createElement(Stepper, { value: rightRadius, min: 0, max: 50, onChange: (v2) => {
       setRightRadiusState(v2);
       setRightRadius(v2);
-    } })))), /* @__PURE__ */ React.createElement(Section, { id: "liquify-sec-player", title: titles.player }, /* @__PURE__ */ React.createElement(SubSection, { title: sub.sizeShape || "Size & Shape" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.playerWidth, /* @__PURE__ */ React.createElement(HelpTip, { text: tips.playerWidth })), /* @__PURE__ */ React.createElement(
+    } }))), /* @__PURE__ */ React.createElement(SubSection, { title: sub.sidebars || "Sidebars" }, Object.keys(SIDEBARS).map((side) => /* @__PURE__ */ React.createElement(React.Fragment, { key: side }, /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.ui?.[side === "left" ? "leftSidebarBlur" : "rightSidebarBlur"] || (side === "left" ? "Blur Behind Left Sidebar:" : "Blur Behind Right Sidebar:"), /* @__PURE__ */ React.createElement(HelpTip, { text: tips.sidebarBlur })), /* @__PURE__ */ React.createElement(
+      Toggle,
+      {
+        checked: sidebarBlur[side].on,
+        onChange: (checked) => applySidebarBlur(side, { on: checked })
+      }
+    )), sidebarBlur[side].on && /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.ui?.[side === "left" ? "leftSidebarBlurAmount" : "rightSidebarBlurAmount"] || (side === "left" ? "Left Sidebar Blur (px):" : "Right Sidebar Blur (px):")), /* @__PURE__ */ React.createElement(
+      Stepper,
+      {
+        value: sidebarBlur[side].amount,
+        min: 0,
+        max: 80,
+        onChange: (v2) => applySidebarBlur(side, { amount: v2 })
+      }
+    )))), /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.ui?.localFilesTransparent || "Transparent Local Files Card:", /* @__PURE__ */ React.createElement(HelpTip, { text: tips.localFilesTransparent })), /* @__PURE__ */ React.createElement(
+      Toggle,
+      {
+        checked: localFilesTransparent === "on",
+        onChange: (checked) => {
+          const v2 = checked ? "on" : "off";
+          setLocalFilesTransparentState(v2);
+          setLocalFilesTransparent(v2);
+        }
+      }
+    ))), /* @__PURE__ */ React.createElement(SubSection, { title: sub.typography || "Typography" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.ui?.bodyFont || "Body Font:", /* @__PURE__ */ React.createElement(HelpTip, { text: tips.bodyFont })), /* @__PURE__ */ React.createElement(FontPicker, { value: bodyFont, onChange: (v2) => {
+      setBodyFontState(v2);
+      setFont("body", v2);
+    } })), /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.ui?.headingFont || "Heading Font:", /* @__PURE__ */ React.createElement(HelpTip, { text: tips.headingFont })), /* @__PURE__ */ React.createElement(FontPicker, { value: headingFont, onChange: (v2) => {
+      setHeadingFontState(v2);
+      setFont("heading", v2);
+    } }))), /* @__PURE__ */ React.createElement(SubSection, { title: sub.vinyl || "Vinyl Cover Art" }, Object.keys(VINYL_SURFACES).map((surface) => /* @__PURE__ */ React.createElement("div", { className: "liquifyRow", key: surface }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, (t.vinyl || {})[surface] || surface, /* @__PURE__ */ React.createElement(HelpTip, { text: tips.vinyl })), /* @__PURE__ */ React.createElement(
+      Toggle,
+      {
+        checked: vinyl[surface],
+        onChange: (checked) => applyVinyl(surface, checked)
+      }
+    ))), Object.keys(VINYL_SURFACES).some((s2) => vinyl[s2]) && /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, (t.vinyl || {}).speed || "Seconds Per Turn:"), /* @__PURE__ */ React.createElement(
+      Stepper,
+      {
+        value: vinylSpeed,
+        min: 1,
+        max: 60,
+        onChange: (v2) => {
+          setVinylSpeedState(v2);
+          setVinylSpeed(v2);
+        }
+      }
+    )))), /* @__PURE__ */ React.createElement(Section, { id: "liquify-sec-player", title: titles.player }, /* @__PURE__ */ React.createElement(SubSection, { title: sub.sizeShape || "Size & Shape" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.playerWidth, /* @__PURE__ */ React.createElement(HelpTip, { text: tips.playerWidth })), /* @__PURE__ */ React.createElement(
       Select,
       {
         value: playerWidthMode,
@@ -8291,7 +10973,7 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
           setThemedLyrics(checked);
         }
       }
-    )), themedLyrics === "on" && /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.lyricsFontSize || "Lyrics Font Size:"), /* @__PURE__ */ React.createElement(Stepper, { value: lyricsFontSize, min: 10, max: 150, onChange: (v2) => {
+    )), themedLyrics === "on" && /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.lyricsFontSize || "Lyrics Font Size:"), /* @__PURE__ */ React.createElement(Stepper, { value: lyricsFontSize, min: 50, max: 300, onChange: (v2) => {
       setLyricsFontSizeState(v2);
       setLyricsFontSize(v2);
     } })), themedLyrics === "on" && /* @__PURE__ */ React.createElement("div", { className: "liquifyRow" }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, t.lyricsMargin || "Lyrics Margin:"), /* @__PURE__ */ React.createElement(Stepper, { value: lyricsMargin, min: 0, max: 120, onChange: (v2) => {
@@ -8400,7 +11082,11 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
     React.useEffect(() => {
       const handler = () => setNonce((n) => n + 1);
       window.addEventListener("liquifyConfigApplied", handler);
-      return () => window.removeEventListener("liquifyConfigApplied", handler);
+      window.addEventListener("liquifyLanguageChanged", handler);
+      return () => {
+        window.removeEventListener("liquifyConfigApplied", handler);
+        window.removeEventListener("liquifyLanguageChanged", handler);
+      };
     }, []);
     const SettingsContentAny = SettingsContent;
     return /* @__PURE__ */ React.createElement(SettingsContentAny, { key: nonce, onClose: props.onClose, artistCtrl: props.artistCtrl });
@@ -8435,11 +11121,11 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
     else resetAccentToDefault();
   }
   function applySavedLayoutSettings() {
+    ensureLibraryApplied();
     applySavedBackground();
     ensurePlayerApplied();
     ensureTransparentControlsApplied();
-    ensureBackgroundBlurApplied();
-    ensureBackgroundBrightnessApplied();
+    ensureBackgroundAppearanceApplied();
     ensureArtistScrollEffectApplied();
     applySavedPlaylistHeader();
     applySavedActionBarBox();
@@ -8452,6 +11138,10 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
     ensureLayoutRadiusApplied();
     ensureThemedLyricsApplied();
     ensureGlassBlurApplied();
+    ensureSidebarBlurApplied();
+    ensureFontsApplied();
+    ensureVinylApplied();
+    ensureLocalFilesTransparentApplied();
     applySavedHomeLayout();
     applyComfyCoverArt(false);
     ensurePlaybarCoverBorderRadiusApplied();
@@ -8483,10 +11173,10 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
     if (mode === "dynamic") applyDynamicAccent();
   }
   function installDynamicAccentObserver(anyWin) {
-    if (anyWin.liquifyDynamicObserverTs) return;
-    anyWin.liquifyDynamicObserverTs = new MutationObserver(pushDynamicAccent);
-    anyWin.liquifyDynamicObserverTs.observe(document.body, { attributes: true, subtree: true });
+    if (anyWin.liquifyDynamicAccentInstalled) return;
+    anyWin.liquifyDynamicAccentInstalled = true;
     window.addEventListener("liquifyAccentColorReady", pushDynamicAccent);
+    pushDynamicAccent();
   }
   function registerSettingsModal(artistCtrl) {
     window.showLiquifySettingsMenu = () => {
@@ -8497,105 +11187,21 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
       }
     };
   }
-  function installLyricsViewportFix() {
-    const marker = "liquify-lyrics-viewport";
-    const findViewport = () => {
-      const content = document.querySelector(".lyrics-lyrics-contentContainer");
-      if (!content) return null;
-      let node = content.parentElement;
-      while (node && node !== document.body) {
-        const style = getComputedStyle(node);
-        if ((style.overflowY === "auto" || style.overflowY === "scroll") && node.scrollHeight > node.clientHeight) return node;
-        node = node.parentElement;
-      }
-      return content;
-    };
-    const apply = () => {
-      const viewport = findViewport();
-      if (!viewport) return;
-      viewport.classList.add(marker);
-      const content = viewport.querySelector?.(".lyrics-lyrics-contentContainer") || document.querySelector(".lyrics-lyrics-contentContainer");
-      content?.classList.add("liquify-lyrics-content");
-    };
-    const observer = new MutationObserver(() => requestAnimationFrame(apply));
-    observer.observe(document.body, { childList: true, subtree: true });
-    apply();
-  }
-  function installLyricsSyncButtonFix() {
-    const apply = () => {
-      document.querySelectorAll(".lyrics-lyrics-contentContainer button, .lyrics-lyrics-background button").forEach((button) => {
-        const label = `${button.getAttribute("aria-label") || ""} ${button.textContent || ""}`.toLowerCase();
-        if (label.includes("sync") || label.includes("synchron")) button.classList.add("liquify-lyrics-sync-button");
-      });
-    };
-    const observer = new MutationObserver(() => requestAnimationFrame(apply));
-    observer.observe(document.body, { childList: true, subtree: true });
-    apply();
-  }
-  function installNowPlayingHeaderScrollState() {
-    let bound = null;
-    let frame = 0;
-    const update = () => {
-      frame = 0;
-      const header = document.querySelector(".main-nowPlayingView-headerWrapper");
-      if (!header || !bound) return;
-      header.classList.toggle("liquify-npv-header-at-top", bound.scrollTop <= 0);
-      header.classList.toggle("liquify-npv-header-scrolled", bound.scrollTop > 0);
-    };
-    const bind = () => {
-      const header = document.querySelector(".main-nowPlayingView-headerWrapper");
-      if (!header) return;
-      let node = header.parentElement;
-      while (node && node !== document.body && node.scrollHeight <= node.clientHeight) node = node.parentElement;
-      if (!node || node === bound) return update();
-      if (bound) bound.removeEventListener("scroll", onScroll);
-      bound = node;
-      bound.addEventListener("scroll", onScroll, { passive: true });
-      update();
-    };
-    const onScroll = () => {
-      if (!frame) frame = requestAnimationFrame(update);
-    };
-    const observer = new MutationObserver(() => requestAnimationFrame(bind));
-    observer.observe(document.body, { childList: true, subtree: true });
-    bind();
-  }
-  function installArtistSelectionState() {
-    const apply = () => {
-      document.querySelectorAll(".main-trackList-trackListRow").forEach((row) => {
-        const selected = row.getAttribute("aria-selected") === "true" || row.getAttribute("data-selected") === "true" || row.classList.contains("selected") || row.classList.contains("is-selected");
-        if (row.classList.contains("liquify-artist-row-selected") !== selected) row.classList.toggle("liquify-artist-row-selected", selected);
-      });
-    };
-    const observer = new MutationObserver(apply);
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["aria-selected", "data-selected", "class"] });
-    apply();
-  }
   function installFeatureControllers() {
-    installLyricsViewportFix();
-    installLyricsSyncButtonFix();
-    installNowPlayingHeaderScrollState();
-    installArtistSelectionState();
     installLyricsTranslator();
     installPlaylistIndicatorVisualizer();
     installHomeScreenVisualizer();
     installNextSongCard();
     installNowPlayingViewCover();
     installCoverSwipe();
+    installMiniPlayer();
     installPlayerControlIcons();
     installShareButtonTransition();
-  }
-  function migrateLegacyGlassSettings() {
-    const key = "liquify-config-migration-version";
-    if (localStorage.getItem(key) === "2") return;
-    ["liquify-glass-enabled", "liquify-glass-blur", "liquify-backdrop-blur"].forEach((legacyKey) => localStorage.removeItem(legacyKey));
-    localStorage.setItem(key, "2");
   }
   async function startLiquifySettings() {
     const anyWin = window;
     if (anyWin.liquifyStandaloneTsInitialized) return;
     anyWin.liquifyStandaloneTsInitialized = true;
-    migrateLegacyGlassSettings();
     await awaitSpicetifyReact();
     ensureColorSchemeApplied();
     applySavedGlowSettings();
@@ -8616,416 +11222,164 @@ span.e-10451-overflow-wrap-anywhere.e-10451-button-primary__inner.encore-inverte
 
   // src/theme.ts
   var GLASS_TARGETS = [
-    {
-      // Top bar background layer (made transparent in user.css)
-      selector: ".main-topBar-background",
-      options: { borderRadius: 8 }
-    },
-    {
-      // Dropdown / panel container (made transparent in user.css)
-      selector: ".zddkQq3wlxEOg6aa",
-      options: { borderRadius: 20, glassBlur: "5px" }
-    },
-    {
-      selector: ".main-trackList-trackListHeader",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".Root__now-playing-bar",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".main-globalNav-searchInputContainer .main-topBar-searchBar",
-      options: { borderRadius: 17 }
-    },
-    {
-      selector: ".Root__globalNav .main-globalNav-navLink",
-      options: { borderRadius: 17 }
-    },
-    {
-      selector: ".NJh1B8rnlSUlK7sY",
-      options: { borderRadius: 20, glassBlur: "5px" }
-    },
-    {
-      selector: ".search-searchCategory-carouselButton",
-      options: { borderRadius: 12 }
-    },
-    {
-      selector: ".e-10451-box--tinted",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".main-entityHeader-container",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".main-actionBar-ActionBar",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".main-nowPlayingView-headerWrapper",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".main-nowPlayingView-section",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".main-nowPlayingView-trackInfo",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".main-contextMenu-tippy",
-      options: { borderRadius: 10 }
-    },
-    {
-      selector: ".PromotionButtonTooltip-module_tooltip-animation__cE-rt",
-      options: { borderRadius: 12 }
-    },
-    {
-      selector: ".iiX8td2tfVETS09_ button",
-      options: { borderRadius: 13 }
-    },
-    {
-      selector: ".gpBiAnJHb1gq46qV",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".view-homeShortcutsGrid-shortcut",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".main-home-filterChipsSection",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: "dialog",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".main-topBar-buddyFeed",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".main-userWidget-box",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".main-globalNav-historyButtons",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".EU1ylDKh7s2oMU0g",
-      options: { borderRadius: 12 }
-    },
-    {
-      selector: ".VwcQJ4Zsf0JKD3Ls",
-      options: { borderRadius: 12 }
-    },
-    {
-      selector: ".KQDsZX3kwwuAFpE8",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".KFAJvMWTSagxYXGC",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".main-trackList-trackListRow.q8suB2R_XkoUyIeZ",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".main-nowPlayingView-actionButton",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".main-playlistEditDetailsModal-container",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".main-playlistEditDetailsModal-imageDropDownButton",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".main-home-content section",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".os-scrollbar-handle",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".JDUQ8zTo6EUgHoYt",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".B9ji6YIpLSUHiyxx",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".gu0S9_98ZXIo5DaV",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".SUjhgyMvTou7TddO",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".ERRo1Br0ZQtJYVhz",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".LR7w41pC8ccVc11Q",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".VsYY0YB3c4lmhoDI",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".main-shelf-shelf",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".CO34wNPAbR8mpcdD",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".JthDv0xUCm8rLhu6",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".tlq9Tt69FX4bauLX",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".x-settings-section",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".fa_L1qIbh7QDDd_h",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".TguLwQ522LIEgpK_.IxVxBUbV5M5tGaEx",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".HOf9H18Ya0DkJ4_K",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".main-nowPlayingView-onTourItemGrid:hover",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".qm0mrbeno_z0mpoo",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".N3kf5S8O84aeaCZu",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".J8g7rZ2MDknxmiYP",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".Root__cinema-view",
-      options: { borderRadius: 20, glassBlur: "10px" }
-    },
-    {
-      selector: ".n5KI8mwa5o8qbn4b",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".vado7sbDrEsKhSmn",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".main-embedWidgetGenerator-container",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".e-10451-box--elevated",
-      options: { borderRadius: 15 }
-    },
-    {
-      selector: ".Wzl40f9FIUD91O2o",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".mcZzjuAJUvE9X4gX",
-      options: { borderRadius: 20, glassBlur: "10px", applyTo: "before" }
-    },
-    {
-      selector: ".Htdd9HRV28F07Dwl",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".p67WtOnm9lsRLOu2",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".JLkvt5ABTQYw_rG7",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".mKvcoJ_veYlcHwOz",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".tMcqYZ2om0nYbgrw",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".yZCluNwEsPD2zYyY",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".Hrce4GF4EEkPJdBI",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".EpfIE3glwAOGcNT6",
-      options: { borderRadius: 20 }
-    },
-    {
-      // Glass on a ::before layer behind the menu items (see user.css
-      // .liquify-glass--before), so the items stay crisp above the refraction.
-      selector: ".main-contextMenu-menu",
-      options: { borderRadius: 20, glassBlur: "5px", applyTo: "before" }
-    },
-    {
-      // Popup panel — glass on a ::before layer (see user.css .liquify-glass--before).
-      selector: ".xamNkt5LX9o8aL1q",
-      options: { borderRadius: 20, glassBlur: "5px", applyTo: "before" }
-    },
-    {
-      selector: ".marketplace-header",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".marketplace-tabBar-active",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".Dropdown-menu",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: "#marketplace-readme",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".liquifySettingsPanel",
-      options: { borderRadius: 20, glassBlur: "5px" }
-    },
-    {
-      selector: ".liquifySelectMenu",
-      options: { borderRadius: 15 }
-    },
-    {
-      selector: ".liquifySectionNavScrollBtn",
-      options: { borderRadius: 12 }
-    },
-    {
-      // The toggle's knob is our glass lens (the colored liquid + goo morph come
-      // from settingsStyles.tsx). Glass goes on the knob itself — not the whole
-      // pill — so it doesn't nest behind the toggle's own backdrop. Small element:
-      // a gentle distortion and no chromatic aberration keep the refraction clean
-      // at ~26x24px. It only translates (and scales on press), so the displacement
-      // map stays valid without regeneration.
-      selector: ".liquid-toggle .indicator__liquid",
-      options: { borderRadius: 999, distortionScale: -14, chromaticAberration: false }
-    },
-    {
-      selector: "#liquify-next-song-card",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".main-card-card",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: "#liquify-settings-gear-btn",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".artist-artistDiscography-topBar.artist-artistDiscography-topBarScrolled",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".wJiY1vDfuci2a4db",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".oc3OomY6r9UoIEQ0",
-      options: { borderRadius: 20 }
-    },
-    {
-      selector: ".oReO3E1Df2odSFHX",
-      options: { borderRadius: 10 }
-    },
-    {
-      selector: ".fA6CNWFY1WQBCde9",
-      options: { borderRadius: 10 }
-    },
-    {
-      selector: ".main-trackCreditsModal-container",
-      options: { borderRadius: 10 }
-    },
-    {
-      selector: ".TGvpaalpJK0BKYYL",
-      options: { borderRadius: 10, glassBlur: "5px" }
-    },
-    {
-      selector: ".edvX5XPBIXITSQoH",
-      options: { borderRadius: 10 }
-    }
+    { selector: ".main-topBar-background" },
+    { selector: ".zddkQq3wlxEOg6aa", blur: 5 },
+    { selector: ".main-trackList-trackListHeader" },
+    { selector: ".z0qdvwslOFVOAihShLIq" },
+    { selector: ".main-globalNav-searchInputContainer .main-topBar-searchBar" },
+    { selector: ".Root__globalNav .main-globalNav-navLink" },
+    { selector: ".Root__globalNav .DoxYADBBjYMvoYwl7QPg" },
+    { selector: ".NJh1B8rnlSUlK7sY", blur: 5 },
+    { selector: ".search-searchCategory-carouselButton" },
+    { selector: ".e-10451-box--tinted" },
+    { selector: ".main-entityHeader-container" },
+    { selector: ".main-entityHeader-imageContainerWrapper" },
+    { selector: ".main-actionBar-ActionBar" },
+    { selector: ".main-nowPlayingView-headerWrapper" },
+    { selector: ".main-nowPlayingView-section" },
+    { selector: ".main-nowPlayingView-trackInfo" },
+    { selector: ".main-contextMenu-tippy" },
+    { selector: ".PromotionButtonTooltip-module_tooltip-animation__cE-rt" },
+    { selector: ".iiX8td2tfVETS09_ button" },
+    { selector: ".gpBiAnJHb1gq46qV" },
+    { selector: ".view-homeShortcutsGrid-shortcut" },
+    { selector: ".main-home-filterChipsSection" },
+    { selector: "dialog" },
+    { selector: ".main-topBar-buddyFeed" },
+    { selector: ".main-actionButtons-button" },
+    { selector: ".main-userWidget-box" },
+    { selector: ".main-globalNav-historyButtons" },
+    { selector: ".EU1ylDKh7s2oMU0g" },
+    { selector: ".VwcQJ4Zsf0JKD3Ls" },
+    { selector: ".KQDsZX3kwwuAFpE8" },
+    { selector: ".KFAJvMWTSagxYXGC" },
+    { selector: ".main-trackList-trackListRow.q8suB2R_XkoUyIeZ" },
+    { selector: ".main-nowPlayingView-actionButton" },
+    { selector: ".main-playlistEditDetailsModal-container" },
+    { selector: ".main-playlistEditDetailsModal-imageDropDownButton" },
+    { selector: ".mpXpsL8sGx7xHzYAb5X7" },
+    { selector: ".QVX8Getzkg44Frgfu0wF" },
+    { selector: ".YeMXHXUM5LesBemNwrlw" },
+    { selector: ".VyDGISqVe_mffhTkwoOB" },
+    { selector: ".os-scrollbar-handle" },
+    { selector: ".JDUQ8zTo6EUgHoYt" },
+    { selector: ".B9ji6YIpLSUHiyxx" },
+    { selector: ".gu0S9_98ZXIo5DaV" },
+    { selector: ".SUjhgyMvTou7TddO" },
+    { selector: ".ERRo1Br0ZQtJYVhz" },
+    { selector: ".LR7w41pC8ccVc11Q" },
+    { selector: ".VsYY0YB3c4lmhoDI" },
+    { selector: ".main-shelf-shelf" },
+    { selector: ".CO34wNPAbR8mpcdD" },
+    { selector: ".JthDv0xUCm8rLhu6" },
+    { selector: ".tlq9Tt69FX4bauLX" },
+    { selector: ".x-settings-section" },
+    { selector: ".fa_L1qIbh7QDDd_h" },
+    { selector: ".TguLwQ522LIEgpK_.IxVxBUbV5M5tGaEx" },
+    { selector: ".HOf9H18Ya0DkJ4_K" },
+    { selector: ".main-nowPlayingView-onTourItemGrid:hover" },
+    { selector: ".qm0mrbeno_z0mpoo" },
+    { selector: ".N3kf5S8O84aeaCZu" },
+    { selector: ".J8g7rZ2MDknxmiYP" },
+    { selector: ".Root__cinema-view", blur: 10 },
+    { selector: ".n5KI8mwa5o8qbn4b" },
+    { selector: ".vado7sbDrEsKhSmn" },
+    { selector: ".main-embedWidgetGenerator-container" },
+    { selector: ".e-10451-box--elevated" },
+    { selector: ".Wzl40f9FIUD91O2o" },
+    { selector: ".mcZzjuAJUvE9X4gX", blur: 10, before: true },
+    { selector: ".Htdd9HRV28F07Dwl" },
+    { selector: ".p67WtOnm9lsRLOu2" },
+    { selector: ".JLkvt5ABTQYw_rG7" },
+    { selector: ".mKvcoJ_veYlcHwOz" },
+    { selector: ".tMcqYZ2om0nYbgrw" },
+    { selector: ".yZCluNwEsPD2zYyY" },
+    { selector: ".Hrce4GF4EEkPJdBI" },
+    { selector: ".EpfIE3glwAOGcNT6" },
+    { selector: ".main-contextMenu-menu", blur: 5, before: true, brightness: 0.7 },
+    // before: a backdrop-filter on the menu itself would make it the containing block
+    // of its nested submenus, which its overflow:auto would then clip
+    { selector: ".l1Ov7CMEDnAqk63BPZvI", blur: 5, before: true, brightness: 0.7 },
+    { selector: ".WwpyuVjaoJUdGwq5SfNQ", blur: 5, before: true, brightness: 0.7 },
+    { selector: ".ViRU4WGs4wlDqn0wUPay", blur: 5, before: true, brightness: 0.7 },
+    { selector: ".xamNkt5LX9o8aL1q", blur: 5, before: true },
+    { selector: ".marketplace-header", before: true },
+    { selector: ".marketplace-tabBar-active" },
+    { selector: ".Dropdown-menu" },
+    { selector: "#marketplace-readme" },
+    { selector: ".liquifySettingsPanel", blur: 5, brightness: 0.8 },
+    { selector: ".liquifySelectMenu", brightness: 0.8 },
+    { selector: ".liquifySectionNavScrollBtn" },
+    { selector: ".liquid-toggle .indicator__liquid", distortion: -14, chromatic: false },
+    { selector: "#liquify-next-song-card" },
+    { selector: ".main-card-card" },
+    { selector: "#liquify-settings-gear-btn" },
+    { selector: ".artist-artistDiscography-topBar.artist-artistDiscography-topBarScrolled" },
+    { selector: ".wJiY1vDfuci2a4db" },
+    { selector: ".oc3OomY6r9UoIEQ0" },
+    { selector: ".oReO3E1Df2odSFHX" },
+    { selector: ".fA6CNWFY1WQBCde9" },
+    { selector: ".main-trackCreditsModal-container" },
+    { selector: ".TGvpaalpJK0BKYYL", blur: 5 },
+    { selector: ".edvX5XPBIXITSQoH" },
+    { selector: ".znOINyqAy7ivIGbQyrbt", blur: 5 },
+    { selector: ".iGRaSZDa1r0m21aF6oZq" },
+    { selector: ".niJOWstqVyfckHcXQxP1 .cSZJwcwYgJfwduUmXOOV" },
+    { selector: ".yfJeY2Xi99dPOe6fsIha" },
+    { selector: ".qPY4gsmEW6Bq3CnNXAIE .X6OstObvuolbOo_pF6XN" },
+    { selector: ".x0Tk9K1tu0sFwdD5iNF5" },
+    { selector: ".LNpoPDYnF14Zg2Ml0SEK" },
+    { selector: ".yanzBsLcAL8wDzLb8QrU" },
+    { selector: ".QJeB8A9apRR4gkmZlnSM" },
+    { selector: ".UbzV6GmaFXRSbQNfaAZL.ajHBc3IuiQpQkTmGSCcr" },
+    { selector: ".NG0KBybUCTo8_SxXHF3N" },
+    { selector: ".zyugqDUpsiWa8v7oczU1" },
+    { selector: ".h3nJTxxmxIYRP5Aft1CC.QfR1lK07GZcvLZKPXHPP" },
+    { selector: ".e-10860-legacy-box--tinted" },
+    { selector: ".goKxWei7aIJdA857U744" },
+    { selector: ".UbzV6GmaFXRSbQNfaAZL.gmb9NAvXgkg8XFMlNTNR" },
+    { selector: ".qtQr7uPKnGMSxLWgth54" },
+    { selector: ".PhrrxnpQqpJQdqWtlyIj" },
+    { selector: ".zJpJ7DGpm__TAUnMYhfg" },
+    { selector: ".WUHV3yvmh_gdGie5wFp4" },
+    { selector: ".b0kbWFp7K9_JqU7W7FqI" },
+    { selector: ".JOsq_4H0UgeETLvv6Wah" },
+    { selector: ".WbemFLA2iwaTLbng7jdc" },
+    { selector: ".ZAU9wS6jqWfJxKTQvyfH" },
+    { selector: ".mhioaci0tNPZ1eN4nXbB" },
+    { selector: ".RI3lDBrimDPsR0FtLS3k" },
+    { selector: ".VBHQyT1xMnuK6q3v04tx.zsGE6QfwHX7ZUleMODWP .nVyDKVjzDUKN8CY7oili" },
+    { selector: ".EBmKeFEo2GOt4N3G7uoi" },
+    { selector: ".POvZRseCI_oO9LIu3eiN" },
+    { selector: ".wzC6IOFGHM0mopyh8H3D" },
+    { selector: ".EYVg8yEsGD4dWVtkJFso" },
+    { selector: ".fTcPW1opaLJf91ygHA_P" },
+    { selector: ".OBaDjdU835YN09jcSuBy.t7AyCiAhZeUyLQUW23IY" },
+    { selector: ".RHKi_XpRWCqN6ta7KH69" },
+    { selector: ".sui3ec_WMaK0b1S8PPwz" },
+    { selector: ".zOp0H9s6myIHE7tnkS5m" },
+    { selector: ".qx2q2w0DYin744m8sU7H" },
+    { selector: ".r3MRxhtDijiSmIPdwAxG" },
+    { selector: ".PhrrxnpQqpJQdqWtlyIj, div:has(> .esdT7NhwpvXK5y8x_AhA)" },
+    { selector: ".pK7Xdjf1GUBZLTBDFnlF" },
+    { selector: ".VvAoS6GSNFNNkXztQUOF" },
+    { selector: ".Gs2EwEu259e_Q_vcVyCx", blur: 10 },
+    { selector: ".X8VwVPlDFxPubWkbfRZ2" },
+    { selector: ".w_63eGohnNUi98P84l_b" },
+    { selector: ".cPCPoUfABWzF8MgTHeZv" },
+    { selector: ".tlJt8JO80alw0Nlw6iW9" },
+    { selector: ".suqvnFaPhz7I0S4ZaIqe" },
+    { selector: ".ZXbCSxeqhRFKY9tjH_Kd" },
+    { selector: ".J11WGNd9DCUb60Rvdc2A" },
+    { selector: ".e-10860-legacy-box--elevated" },
+    { selector: "._tooltip-animation_igq95_1" },
+    { selector: ".lWpOlKmFJB1FKmwsccav" },
+    { selector: ".YpbkD1KYiSUHMMIc3FEe" },
+    { selector: ".kfrC7VggzHlLjrTehQdA" }
   ];
-  var PRECISE_TARGETS = [
-    { selector: ".main-trackList-trackListHeader", options: { borderRadius: 20 } },
-    { selector: ".main-topBar-background", options: { borderRadius: 0 } },
-    { selector: ".znOINyqAy7ivIGbQyrbt", options: { borderRadius: 20, glassBlur: "5px" } },
-    { selector: ".iGRaSZDa1r0m21aF6oZq", options: { borderRadius: 20 } },
-    { selector: ".niJOWstqVyfckHcXQxP1 .cSZJwcwYgJfwduUmXOOV", options: { borderRadius: 20 } },
-    { selector: ".main-nowPlayingView-trackInfo", options: { borderRadius: 20 } },
-    { selector: ".main-nowPlayingView-section", options: { borderRadius: 20 } },
-    { selector: ".main-entityHeader-container.gmKBgPCnX785KDicbdJu", options: { borderRadius: 20 } },
-    { selector: ".main-home-filterChipsSection", options: { borderRadius: 20 } },
-    { selector: ".view-homeShortcutsGrid-shortcut", options: { borderRadius: 20 } },
-    { selector: ".main-card-card", options: { borderRadius: 20 } },
-    { selector: ".Root__globalNav .DoxYADBBjYMvoYwl7QPg", options: { borderRadius: 50 } },
-    { selector: ".yfJeY2Xi99dPOe6fsIha", options: { borderRadius: 20 } },
-    { selector: ".main-entityHeader-container.main-entityHeader-containerNormal", options: { borderRadius: 20 } },
-    { selector: ".x-settings-section", options: { borderRadius: 20 } },
-    { selector: ".LR7w41pC8ccVc11Q", options: { borderRadius: 20 } },
-    { selector: ".ERRo1Br0ZQtJYVhz", options: { borderRadius: 20 } },
-    { selector: ".HOf9H18Ya0DkJ4_K", options: { borderRadius: 20 } },
-    { selector: ".main-entityHeader-imageContainerWrapper", options: { borderRadius: 20 } },
-    { selector: ".JDUQ8zTo6EUgHoYt", options: { borderRadius: 20 } },
-    { selector: ".main-globalNav-searchInputContainer .main-topBar-searchBar", options: { borderRadius: 17 } },
-    { selector: ".Root__globalNav .main-globalNav-navLink", options: { borderRadius: 17 } },
-    // Context menu / popup: glass on a ::before layer (see user.css .liquify-glass--before).
-    { selector: ".main-contextMenu-menu", options: { borderRadius: 20, glassBlur: "5px", applyTo: "before" } },
-    { selector: ".xamNkt5LX9o8aL1q", options: { borderRadius: 20, glassBlur: "5px", applyTo: "before" } },
-    // Settings toggle knob — tiny, gentle distortion, no chromatic aberration.
-    { selector: ".liquid-toggle .indicator__liquid", options: { borderRadius: 999, distortionScale: -14, chromaticAberration: false } }
-  ];
-  var preciseSelectors = new Set(PRECISE_TARGETS.map((t) => t.selector));
-  var BULK_TARGETS = GLASS_TARGETS.filter((t) => !preciseSelectors.has(t.selector)).map((t) => {
-    const gb = t.options?.glassBlur;
-    return {
-      selector: t.selector,
-      blur: gb ? parseInt(gb, 10) : void 0,
-      before: t.options?.applyTo === "before" ? true : void 0
-    };
-  });
   function start() {
     installGlassDevtools();
-    watchGlassTargets(PRECISE_TARGETS);
-    applyBulkGlass(BULK_TARGETS);
+    applyGlass(GLASS_TARGETS);
     startBackground();
     startPopupBounce();
     startLiquifySettings();
