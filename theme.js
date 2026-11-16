@@ -9656,6 +9656,16 @@ ${HOME_SHORTCUT}:hover [data-liquify-home-visualizer] {
       root.style.removeProperty(`--spice-rgb-${key}`);
     }
   }
+  /* Expose whether the active palette is light or dark, so CSS can fix
+     Spotify surfaces that hardcode dark-mode colors. */
+  function updatePaletteTone() {
+    try {
+      const main = readSpiceHex("main");
+      if (!main) return;
+      document.documentElement.dataset.liquifyTone = luminanceOf(hexToRgb(main)) > 0.4 ? "light" : "dark";
+    } catch {
+    }
+  }
   function applyColorScheme(scheme, opts = {}) {
     if (scheme !== "native" && !COLOR_PALETTES[scheme]) scheme = "mocha";
     localStorage.setItem(COLOR_SCHEME_KEY, scheme);
@@ -9671,6 +9681,7 @@ ${HOME_SHORTCUT}:hover [data-liquify-home-visualizer] {
       }
     }
     installNativeColorWatcher(scheme === "native");
+    updatePaletteTone();
     window.dispatchEvent(new Event("liquifyColorSchemeChange"));
     try {
       resetDynamicAccentCache?.();
@@ -9745,6 +9756,7 @@ ${HOME_SHORTCUT}:hover [data-liquify-home-visualizer] {
           if (link.nextElementSibling !== style) link.after(style);
         } else if (!style.isConnected) document.body.appendChild(style);
         style.textContent = css;
+        updatePaletteTone();
         resetDynamicAccentCache?.();
         applySavedAccentSettings?.();
         window.dispatchEvent(new Event("liquifyColorSchemeChange"));
