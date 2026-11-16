@@ -6483,9 +6483,11 @@ ${CANVAS_VIDEO} { filter: blur(${getBlur()}px); }`;
   // src/settings/features/homeLayout.ts
   var STYLE_ID10 = "liquify-home-layout-style";
   var HOME_LAYOUT_KEY = "liquify-home-layout";
-  var HOME_SECTIONS = ".mpXpsL8sGx7xHzYAb5X7, .QVX8Getzkg44Frgfu0wF, .YeMXHXUM5LesBemNwrlw";
+  /* Hashed wrappers from older builds, plus the stable home-page sections
+     (shortcuts grid + shelves) used by Spotify 1.3.8.620+. */
+  var HOME_SECTIONS = ".mpXpsL8sGx7xHzYAb5X7, .QVX8Getzkg44Frgfu0wF, .YeMXHXUM5LesBemNwrlw, .main-home-content > section";
   function updateHomeLayoutCss(on) {
-    const css = on ? `${HOME_SECTIONS} { padding: 16px; box-shadow: var(--liquify-shadow); border-radius: 20px; }.YeMXHXUM5LesBemNwrlw .X433eA5ps5SoaH2ccjn0 { --margin-start: 0px; --margin-end: 0px; }.QVX8Getzkg44Frgfu0wF .L5oPevXEAY1GuRJ9a1_j { margin-inline: 0; box-sizing: border-box; }` : `${HOME_SECTIONS} { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; box-shadow: none !important; }`;
+    const css = on ? `${HOME_SECTIONS} { padding: 16px; box-shadow: var(--liquify-shadow); border-radius: 20px; overflow: hidden; }.YeMXHXUM5LesBemNwrlw .X433eA5ps5SoaH2ccjn0 { --margin-start: 0px; --margin-end: 0px; }.main-home-content > section .wlt29eHDgK8xhXU4uIYM { --margin-start: var(--encore-cards-margin, -12px) !important; --margin-end: var(--encore-cards-margin, -12px) !important; }.QVX8Getzkg44Frgfu0wF .L5oPevXEAY1GuRJ9a1_j { margin-inline: 0; box-sizing: border-box; }` : `${HOME_SECTIONS} { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; box-shadow: none !important; } .main-home-content > section { background-color: transparent !important; }`;
     updateStyle(STYLE_ID10, css);
   }
   function applyHomeLayout(mode) {

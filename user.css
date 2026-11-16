@@ -4780,3 +4780,25 @@ html[data-liquify-tone="light"] .Root__right-sidebar div:has(> video) + div {
     var(--spice-main) 95%
   ) !important;
 }
+
+/* Settings panel: its styles hardcode white text for a dark glass panel.
+   On light palettes use the palette's text colors instead. */
+html[data-liquify-tone="light"] #liquify-settings-react-overlay :is(.liquifySettingsPanel, .liquifySettingsPanel *) {
+  color: var(--spice-text) !important;
+}
+html[data-liquify-tone="light"] #liquify-settings-react-overlay .liquifySettingsPanel ::placeholder {
+  color: var(--spice-subtext) !important;
+}
+html[data-liquify-tone="light"] #liquify-settings-react-overlay .liquifySettingsPanel :is(input, select, [class*="Select"], [class*="Stepper"], [class*="SectionNavBtn"]) {
+  background-color: color-mix(in srgb, var(--spice-text) 8%, transparent);
+}
+
+/* Home sticky header (chips bar once scrolled): Spotify paints the shortcut
+   tint under a 60% black overlay. On light palettes use the background with
+   the same soft accent wash as the home header. */
+html[data-liquify-tone="light"] .yWcUXGl4e5ZmkcWnVpkA {
+  background-color: var(--spice-main) !important;
+}
+html[data-liquify-tone="light"] .yWcUXGl4e5ZmkcWnVpkA::after {
+  background-color: color-mix(in srgb, var(--accent-color, var(--spice-button)) 14%, transparent) !important;
+}
