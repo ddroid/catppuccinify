@@ -832,7 +832,7 @@ dialog {
 /*Now playing bar*/
 
 /* width, height and radius come from the player settings (src/settings/features/player.ts) */
-.z0qdvwslOFVOAihShLIq {
+:is(.z0qdvwslOFVOAihShLIq, .Root__now-playing-bar) {
   width: 70%;
   margin: auto;
   border-radius: 25px;
@@ -849,7 +849,7 @@ dialog {
    and its internal grid is untouched. Centring the container itself with
    `display:flex; align-items:center` instead collapses that grid to content
    width. A no-op at the default height, where bar and container match. */
-.z0qdvwslOFVOAihShLIq {
+:is(.z0qdvwslOFVOAihShLIq, .Root__now-playing-bar) {
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -857,7 +857,8 @@ dialog {
 
 /* player cover rim; on an ::after because the cover image covers the slot's own
    inset shadow. border-radius: inherit follows the cover radius and vinyl settings */
-[data-testid="now-playing-widget"] [data-testid="CoverSlotCollapsed__container"]::after {
+[data-testid="now-playing-widget"] [data-testid="CoverSlotCollapsed__container"]::after,
+[data-testid="now-playing-widget-v2"] [data-testid="cover-art-container"]::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -893,7 +894,7 @@ button.e-10451-legacy-button.e-10451-legacy-button-tertiary.e-10451-overflow-wra
 }
 
 @media (max-width: 1100px) {
-  .z0qdvwslOFVOAihShLIq {
+  :is(.z0qdvwslOFVOAihShLIq, .Root__now-playing-bar) {
     width: 100% !important;
   }
 }

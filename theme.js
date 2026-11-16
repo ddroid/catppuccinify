@@ -4242,7 +4242,7 @@ ${HEADER_IMAGE} {
   var PLAYBAR_COVER_BORDER_RADIUS_KEY = "liquify-playbar-cover-border-radius";
   var PLAYBAR_COVER_DEFAULTS = { borderRadius: 12 };
   var LEGACY_PLAYBAR_COVER_DEFAULT_RADIUS = 8;
-  var PLAYBAR_COVER_SLOT = '[data-testid="now-playing-widget"] [data-testid="CoverSlotCollapsed__container"]';
+  var PLAYBAR_COVER_SLOT = ':is([data-testid="now-playing-widget"], [data-testid="now-playing-widget-v2"]) :is([data-testid="CoverSlotCollapsed__container"], [data-testid="cover-art-container"])';
   function applyPlaybarCoverBorderRadius(px) {
     const css = `
     ${PLAYBAR_COVER_SLOT},
@@ -5573,7 +5573,7 @@ ${DISC}::after {
   var DEFAULT_CUSTOM_WIDTH = 70;
   var DEFAULT_CUSTOM_HEIGHT = 80;
   var DEFAULT_RADIUS = 30;
-  var PLAYER_BAR = ".z0qdvwslOFVOAihShLIq";
+  var PLAYER_BAR = ":is(.z0qdvwslOFVOAihShLIq, .Root__now-playing-bar)";
   var STYLE_ID5 = "liquify-player-style";
   function getPlayerElement() {
     return document.querySelector(PLAYER_BAR);
@@ -11513,7 +11513,53 @@ ${HOME_SHORTCUT}:hover [data-liquify-home-visualizer] {
     { selector: ".YpbkD1KYiSUHMMIc3FEe" },
     { selector: ".kfrC7VggzHlLjrTehQdA" }
   ];
+  // Newer Spotify builds (e.g. 1.3.8.620) ship hashed layout classes that
+  // spicetify's css-map does not translate yet, so the readable Root__* names
+  // the theme relies on are missing. Restore them from the layout grid's
+  // named areas, which are stable across builds.
+  var LAYOUT_AREA_CLASSES = {
+    "left-sidebar": "Root__nav-bar",
+    "main-view": "Root__main-view",
+    "right-sidebar": "Root__right-sidebar",
+    "now-playing-bar": "Root__now-playing-bar"
+  };
+  function installLayoutClassShim() {
+    const observed = new WeakSet();
+    let observer = null;
+    const ensure = (el, cls) => {
+      if (el && !el.classList.contains(cls)) el.classList.add(cls);
+    };
+    const sync = () => {
+      try {
+        const anchor = document.getElementById("main-view") || document.querySelector('aside[data-testid="now-playing-bar"]')?.parentElement;
+        const top = anchor?.parentElement;
+        if (!top || getComputedStyle(top).display !== "grid") return;
+        ensure(top, "Root__top-container");
+        const watch = [top];
+        for (const child of top.children) {
+          const cls = LAYOUT_AREA_CLASSES[getComputedStyle(child).gridArea];
+          if (cls) {
+            ensure(child, cls);
+            watch.push(child);
+          } else if (child.id === "global-nav-bar") {
+            ensure(child, "Root__globalNav");
+            watch.push(child);
+          }
+        }
+        observer ??= new MutationObserver(sync);
+        for (const el of watch) {
+          if (observed.has(el)) continue;
+          observed.add(el);
+          observer.observe(el, { attributes: true, attributeFilter: ["class"], childList: el === top });
+        }
+      } catch {
+      }
+    };
+    sync();
+    setInterval(sync, 2e3);
+  }
   function start() {
+    installLayoutClassShim();
     installGlassDevtools();
     applyGlass(GLASS_TARGETS);
     startBackground();
