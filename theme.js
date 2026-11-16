@@ -1910,6 +1910,9 @@
     }
     function resolveBackdrop() {
       const bgMode = localStorage.getItem("liquify-bg-mode") || "dynamic";
+      // "off": hide every backdrop layer and show the palette background; the
+      // cover is still resolved so the dynamic accent keeps working.
+      document.documentElement.classList.toggle("liquify-bg-off", bgMode === "off");
       const customImage = getLibraryUrl();
       const bgUrl = localStorage.getItem("liquify-bg-url");
       const customAnimated = localStorage.getItem("liquify-bg-custom-animated") === "on";
@@ -10660,7 +10663,8 @@ ${HOME_SHORTCUT}:hover [data-liquify-home-visualizer] {
           { value: "animated", label: t.dropdown.animated },
           { value: "playlist", label: t.dropdown.playlist || "Playlist" },
           { value: "custom", label: t.dropdown.custom },
-          { value: "url", label: t.dropdown.url || "URL" }
+          { value: "url", label: t.dropdown.url || "URL" },
+          { value: "off", label: t.dropdown.off || "Off" }
         ],
         onChange: (m2) => void applyBgMode(m2)
       }
@@ -10719,7 +10723,7 @@ ${HOME_SHORTCUT}:hover [data-liquify-home-visualizer] {
           { value: "tiles", label: t.dropdown.engineTiles || "Classic" }
         ]
       }
-    )), appearanceRows, bgEngine === "kawarp" && Object.keys(KAWARP_RANGES).map((key) => /* @__PURE__ */ React.createElement("div", { className: "liquifyRow", key }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, (t.kawarp || {})[key] || key), /* @__PURE__ */ React.createElement(
+    )), bgMode !== "off" && appearanceRows, bgMode !== "off" && bgEngine === "kawarp" && Object.keys(KAWARP_RANGES).map((key) => /* @__PURE__ */ React.createElement("div", { className: "liquifyRow", key }, /* @__PURE__ */ React.createElement("div", { className: "liquifyLabel" }, (t.kawarp || {})[key] || key), /* @__PURE__ */ React.createElement(
       Stepper,
       {
         value: kawarp[key],
