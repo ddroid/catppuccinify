@@ -832,7 +832,7 @@ dialog {
 /*Now playing bar*/
 
 /* width, height and radius come from the player settings (src/settings/features/player.ts) */
-.z0qdvwslOFVOAihShLIq {
+:is(.z0qdvwslOFVOAihShLIq, .Root__now-playing-bar) {
   width: 70%;
   margin: auto;
   border-radius: 25px;
@@ -849,7 +849,7 @@ dialog {
    and its internal grid is untouched. Centring the container itself with
    `display:flex; align-items:center` instead collapses that grid to content
    width. A no-op at the default height, where bar and container match. */
-.z0qdvwslOFVOAihShLIq {
+:is(.z0qdvwslOFVOAihShLIq, .Root__now-playing-bar) {
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -857,7 +857,8 @@ dialog {
 
 /* player cover rim; on an ::after because the cover image covers the slot's own
    inset shadow. border-radius: inherit follows the cover radius and vinyl settings */
-[data-testid="now-playing-widget"] [data-testid="CoverSlotCollapsed__container"]::after {
+[data-testid="now-playing-widget"] [data-testid="CoverSlotCollapsed__container"]::after,
+[data-testid="now-playing-widget-v2"] [data-testid="cover-art-container"]::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -893,7 +894,7 @@ button.e-10451-legacy-button.e-10451-legacy-button-tertiary.e-10451-overflow-wra
 }
 
 @media (max-width: 1100px) {
-  .z0qdvwslOFVOAihShLIq {
+  :is(.z0qdvwslOFVOAihShLIq, .Root__now-playing-bar) {
     width: 100% !important;
   }
 }
@@ -4729,4 +4730,84 @@ button[data-testid="play-button"]:hover,
 .jiWxWueoicolJZnS.liquify-artist-banner-hidden,
 .jiWxWueoicolJZnS.liquify-artist-banner-hidden img {
   opacity: 0 !important;
+}
+
+/* ══════════════ Palette-agnostic home fixes (light palettes) ══════════════ */
+
+/* Selected filter chips ("All", "Music", …): the accent rule above only knew
+   older Encore prefixes; match any build so the label stays readable. */
+[class*="legacy-chip__inner--selected"] {
+  background-color: var(--accent-color, var(--spice-button)) !important;
+  color: var(--liquify-on-accent, var(--spice-main)) !important;
+}
+
+/* Carousel edge fades are hardcoded to Spotify's dark #121212; follow the
+   palette instead (harmless on dark palettes). */
+.main-view-container [data-shelf],
+.main-view-container .main-home-content {
+  --carousel-start-chevron-gradient: color-mix(in srgb, var(--spice-main) 70%, transparent) !important;
+  --carousel-end-chevron-gradient: color-mix(in srgb, var(--spice-main) 70%, transparent) !important;
+}
+
+/* Home header: Spotify darkens it with a black overlay (#0009) and a grey
+   tint, which turns into a muddy block on light palettes. Use a soft accent
+   wash that fades into the background instead. */
+html[data-liquify-tone="light"] :is(.h1AjDPMDbQn9UTUl6owY, .main-home-homeHeader) {
+  background-color: transparent !important;
+  background-image: linear-gradient(
+      color-mix(in srgb, var(--accent-color, var(--spice-button)) 22%, transparent) 0%,
+      transparent 100%
+    ) !important;
+}
+
+/* Unselected chips: a touch more contrast on light palettes */
+html[data-liquify-tone="light"] [class*="legacy-chip__inner"]:not([class*="--selected"]) {
+  background-color: color-mix(in srgb, var(--spice-text) 10%, var(--spice-main)) !important;
+  color: var(--spice-text) !important;
+}
+
+/* Now Playing view: music videos / canvases play behind the panel text.
+   Spotify layers near-black scrims over them (for its white text); on light
+   palettes the text is dark, so swap those for a light scrim. */
+html[data-liquify-tone="light"] .Root__right-sidebar div:has(> video) + div > div {
+  background: none !important;
+}
+html[data-liquify-tone="light"] .Root__right-sidebar div:has(> video) + div {
+  background: linear-gradient(
+    color-mix(in srgb, var(--spice-main) 80%, transparent) 0%,
+    color-mix(in srgb, var(--spice-main) 55%, transparent) 30%,
+    color-mix(in srgb, var(--spice-main) 70%, transparent) 60%,
+    var(--spice-main) 95%
+  ) !important;
+}
+
+/* Settings panel: its styles hardcode white text for a dark glass panel.
+   On light palettes use the palette's text colors instead. */
+html[data-liquify-tone="light"] #liquify-settings-react-overlay :is(.liquifySettingsPanel, .liquifySettingsPanel *),
+html[data-liquify-tone="light"] :is(.liquifySelectMenu, .liquifySelectMenu *, .liquifyTooltipPopup) {
+  color: var(--spice-text) !important;
+}
+html[data-liquify-tone="light"] .liquifySelectMenu .liquifySelectItem.isSelected {
+  color: var(--liquify-on-accent, var(--spice-main)) !important;
+}
+html[data-liquify-tone="light"] #liquify-settings-react-overlay .liquifySettingsPanel ::placeholder {
+  color: var(--spice-subtext) !important;
+}
+html[data-liquify-tone="light"] #liquify-settings-react-overlay .liquifySettingsPanel :is(input, select, [class*="Select"], [class*="Stepper"], [class*="SectionNavBtn"]) {
+  background-color: color-mix(in srgb, var(--spice-text) 8%, transparent);
+}
+
+/* Home sticky header (chips bar once scrolled): Spotify paints the shortcut
+   tint under a 60% black overlay. On light palettes use the background with
+   the same soft accent wash as the home header. */
+html[data-liquify-tone="light"] .yWcUXGl4e5ZmkcWnVpkA {
+  background-color: var(--spice-main) !important;
+}
+html[data-liquify-tone="light"] .yWcUXGl4e5ZmkcWnVpkA::after {
+  background-color: color-mix(in srgb, var(--accent-color, var(--spice-button)) 14%, transparent) !important;
+}
+
+/* Background: Off — no cover/custom/animated backdrop, plain palette color */
+html.liquify-bg-off :is(.liquify-bg-layer, .liquify-animated-bg, .liquify-kawarp-bg) {
+  display: none !important;
 }
