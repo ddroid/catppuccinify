@@ -151,6 +151,8 @@ spicetify apply
 
 > The generated `color.ini` only contains the `[Dank]` section, so switch the in-app scheme to **System** afterwards (or keep the Catppuccin flavors in a separate theme folder that symlinks `theme.js` / `user.css`).
 
+**DMS defaults.** When the Spicetify theme or color scheme is named `Dank` / `DMS` / `matugen`, the first launch fills in a DMS-tuned preset: System colors, background off, floating compact player, new home layout and Montserrat. It only fills settings you haven't set, so your changes are never overwritten. To apply the full preset later, import [`dms/liquify-dms-preset.json`](dms/liquify-dms-preset.json) from the settings panel.
+
 ---
 
 ## ✨ Features
