@@ -11564,6 +11564,13 @@ ${HOME_SHORTCUT}:hover [data-liquify-home-visualizer] {
             watch.push(child);
           }
         }
+        // Extensions (e.g. Liquid Lyrics) mount their playbar buttons into
+        // .main-nowPlayingBar-extraControls, which is also unmapped on these
+        // builds. It is the row holding the queue / devices / volume controls.
+        const queueBtn = document.querySelector('aside[data-testid="now-playing-bar"] [data-testid="control-button-queue"]');
+        let row = queueBtn?.parentElement;
+        while (row && row.children.length < 3 && row.tagName !== "ASIDE") row = row.parentElement;
+        if (row && row.tagName !== "ASIDE") ensure(row, "main-nowPlayingBar-extraControls");
         observer ??= new MutationObserver(sync);
         for (const el of watch) {
           if (observed.has(el)) continue;
@@ -11576,7 +11583,109 @@ ${HOME_SHORTCUT}:hover [data-liquify-home-visualizer] {
     sync();
     setInterval(sync, 2e3);
   }
+  // Defaults for DankMaterialShell setups (Spicetify theme/color scheme named
+  // "Dank" / "DMS" / "matugen"). Seeded once on first run, and only for keys
+  // the user has not set yet, so existing choices are never overwritten.
+  // Also shipped as dms/liquify-dms-preset.json for manual import.
+  var DMS_DEFAULT_SETTINGS = {
+    "liquify-color-scheme": "native",
+    "liquify-accent-mode": "default",
+    "liquify-accent-source": "background",
+    "liquify-accent-sat-boost": "17",
+    "liquify-accent-light-boost": "11",
+    "liquify-glow-mode": "default",
+    "liquify-bg-mode": "off",
+    "liquify-bg-custom-animated": "off",
+    "liquify-bg-blur": "0",
+    "liquify-bg-brightness": "100",
+    "liquify-hires-cover": "on",
+    "liquify-artist-bg-mode": "theme",
+    "liquify-artist-scroll-blur": "15",
+    "liquify-artist-scroll-brightness": "70",
+    "liquify-player-width": "theme",
+    "liquify-player-custom-width": "70",
+    "liquify-player-custom-height": "80",
+    "liquify-player-radius": "30",
+    "liquify-playlist-header-mode": "show",
+    "liquify-action-bar-box-mode": "show",
+    "liquify-transparent-player": "off",
+    "liquify-compact-player": "on",
+    "liquify-lyrics-mode": "off",
+    "liquify-glass-enabled": "off",
+    "liquify-floating-player": "on",
+    "liquify-connect-bar": "hide",
+    "liquify-home-layout": "on",
+    "liquify-popup-bounce": "on",
+    "liquify-progress-bar-height": "12",
+    "liquify-progress-bar-radius": "4",
+    "liquify-progress-bar-compat": "off",
+    "liquify-nav-radius": "20",
+    "liquify-main-radius": "20",
+    "liquify-right-radius": "20",
+    "liquify-themed-lyrics": "off",
+    "liquify-lyrics-font-size-pct": "130",
+    "liquify-lyrics-margin": "56",
+    "liquify-nsc-show": "hide",
+    "liquify-nsc-position": "right",
+    "liquify-nsc-height": "80",
+    "liquify-nsc-max-width": "256",
+    "liquify-nsc-gap": "10",
+    "liquify-nsc-cover-size": "55",
+    "liquify-nsc-hpad": "10",
+    "liquify-nsc-vpad": "8",
+    "liquify-nsc-gap-player": "7",
+    "liquify-nsc-border-radius": "20",
+    "liquify-nsc-cover-border-radius": "13",
+    "liquify-npv-cover-mode": "off",
+    "liquify-npv-cover-show-always": "no",
+    "liquify-npv-cover-blur": "7",
+    "liquify-comfy-cover-enabled": "show",
+    "liquify-comfy-cover-width": "90",
+    "liquify-comfy-cover-height": "90",
+    "liquify-comfy-cover-mb": "35",
+    "liquify-comfy-cover-ml": "0",
+    "liquify-playbar-cover-border-radius": "20",
+    "liquify-player-icons": "on",
+    "liquify-sidebar-blur-left": "off",
+    "liquify-sidebar-blur-left-amount": "24",
+    "liquify-sidebar-blur-right": "off",
+    "liquify-sidebar-blur-right-amount": "24",
+    "liquify-local-files-transparent": "off",
+    "liquify-font-body": "Montserrat",
+    "liquify-font-heading": "Montserrat",
+    "liquify-vinyl-speed": "12",
+    "liquify-vinyl-npv": "off",
+    "liquify-vinyl-playbar": "off",
+    "liquify-vinyl-cinema": "off",
+    "liquify-vinyl-mini-player": "off",
+    "liquify-bg-engine": "kawarp",
+    "liquify-kawarp-warp": "50",
+    "liquify-kawarp-speed": "100",
+    "liquify-kawarp-saturation": "150",
+    "liquify-kawarp-scale": "100",
+    "liquify-kawarp-contrast": "100",
+    "liquify-kawarp-blur": "10",
+    "liquify-kawarp-brightness": "45",
+    "liquify-tiles-blur": "50",
+    "liquify-tiles-brightness": "60"
+  };
+  var DMS_DEFAULTS_SEEDED_KEY = "liquify-dms-defaults-seeded";
+  function isDmsSetup() {
+    const cfg = Spicetify?.Config || {};
+    return /dank|dms|matugen/i.test(`${cfg.current_theme || ""} ${cfg.color_scheme || ""}`);
+  }
+  function seedDmsDefaults() {
+    try {
+      if (!isDmsSetup() || localStorage.getItem(DMS_DEFAULTS_SEEDED_KEY) === "1") return;
+      for (const [key, value] of Object.entries(DMS_DEFAULT_SETTINGS)) {
+        if (localStorage.getItem(key) === null) localStorage.setItem(key, value);
+      }
+      localStorage.setItem(DMS_DEFAULTS_SEEDED_KEY, "1");
+    } catch {
+    }
+  }
   function start() {
+    seedDmsDefaults();
     installLayoutClassShim();
     installGlassDevtools();
     applyGlass(GLASS_TARGETS);
